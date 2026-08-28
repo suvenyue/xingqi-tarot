@@ -607,12 +607,7 @@ export default function Home() {
 
   function shuffledDeck() {
     const shuffledCards = secureShuffle(cards);
-    const halfDeck = cards.length / 2;
-    const orientations = secureShuffle([
-      ...Array.from({ length: halfDeck }, () => false),
-      ...Array.from({ length: halfDeck }, () => true),
-    ]);
-    return shuffledCards.map((card, index) => ({ ...card, reversed: orientations[index] }));
+    return shuffledCards.map((card) => ({ ...card, reversed: secureRandomIndex(2) === 1 }));
   }
 
   function drawCards() {
@@ -763,7 +758,7 @@ export default function Home() {
           <p className="eyebrow"><span /> A QUIET MOMENT FOR YOU</p>
           <h1>让牌面映见<br />你心中的答案</h1>
           <p className="intro-copy">完整收录22张大阿卡纳与56张小阿卡纳，依据韦特体系的经典象征与正逆位牌义，照亮你已经感受到、却还没说出口的事。</p>
-          <p className="deck-badge"><span>78</span> 张完整牌组 · 7 种牌阵 · 正逆位 50 / 50</p>
+          <p className="deck-badge"><span>78</span> 张完整牌组 · 7 种牌阵 · 每张正逆位 50 / 50</p>
 
           <div className="spread-switch spread-catalog" aria-label="选择牌阵">
             {(Object.entries(spreadDefinitions) as [Spread, SpreadDefinition][]).map(([key, definition]) => (
