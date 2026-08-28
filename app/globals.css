@@ -94,12 +94,42 @@ h1 { margin: 24px 0 22px; font: 400 clamp(42px,5vw,72px)/1.13 var(--font-serif);
 .card-title strong { font: 600 17px/1.1 var(--font-serif); } .card-title span { font: 700 6px/1 var(--font-sans); letter-spacing: .18em; }
 .shuffling .tarot-card { animation: shuffle .65s ease both; }
 .interpretations { position: relative; z-index: 2; margin-top: 23px; text-align: left; }
+.reading-overview { margin: 8px 0 16px; padding: 24px; border: 1px solid rgba(213,174,104,.2); border-radius: 16px; background: linear-gradient(135deg,rgba(213,174,104,.1),rgba(58,35,75,.24)); }
+.overview-label { color: #d5ae68; font-size: 9px; font-weight: 700; letter-spacing: .2em; }
+.reading-overview h3 { margin: 9px 0 10px; font: 500 20px/1.3 var(--font-serif); }
+.reading-overview > p { margin: 0; color: #c2b5c6; font: 12px/1.85 var(--font-serif); }
+.overview-path { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 18px; }
+.overview-path span { padding: 10px; border-radius: 9px; background: rgba(12,8,20,.38); color: #9c8fa2; font-size: 9px; line-height: 1.5; }
+.overview-path b { display: block; margin-bottom: 4px; color: #d5ae68; font-size: 8px; letter-spacing: .14em; }
 .interpretation { padding: 17px 0; border-top: 1px solid rgba(213,174,104,.15); }
 .interpretation-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
 .interpretation-heading span { color: #927c59; font-size: 9px; font-weight: 700; letter-spacing: .2em; }
 .interpretation-heading strong { font: 500 16px/1.2 var(--font-serif); }
 .interpretation p { margin: 8px 0 0; color: #a99bad; font: 12px/1.7 var(--font-serif); }
 .interpretation .keywords { color: #d5ae68; font: 9px/1.4 var(--font-sans); letter-spacing: .14em; }
+.detailed-reading { padding: 24px 0 12px; }
+.core-reading, .question-reading { display: grid; grid-template-columns: 30px 1fr; gap: 12px; margin-top: 22px; }
+.detail-index { padding-top: 2px; color: #806b4b; font-size: 8px; font-weight: 700; letter-spacing: .1em; }
+.detailed-reading h4 { margin: 0; color: #e5d8c3; font: 500 14px/1.4 var(--font-serif); }
+.core-reading p, .question-reading p { font-size: 12px; line-height: 1.82; }
+.core-reading p + p { color: #85798b; }
+.question-reading { padding: 16px 0; border-top: 1px dashed rgba(213,174,104,.13); border-bottom: 1px dashed rgba(213,174,104,.13); }
+.detail-domain-title { display: grid; grid-template-columns: 30px 1fr; gap: 12px; margin-top: 20px; }
+.detail-domain-title > span { color: #806b4b; font-size: 8px; font-weight: 700; }
+.domain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0 0 42px; }
+.domain-grid section { padding: 15px; border: 1px solid rgba(213,174,104,.12); border-radius: 11px; background: rgba(25,16,37,.52); }
+.domain-grid section > span { color: #c6a66d; font-size: 9px; font-weight: 700; letter-spacing: .12em; }
+.domain-grid section p { margin-top: 7px; color: #998c9f; font-size: 11px; line-height: 1.75; }
+.action-guidance { display: grid; grid-template-columns: 1fr .82fr; gap: 10px; margin: 14px 0 12px 42px; }
+.action-copy, .reflection-prompt { padding: 16px; border-radius: 11px; }
+.action-copy { background: rgba(213,174,104,.11); }
+.reflection-prompt { border: 1px solid rgba(213,174,104,.17); }
+.action-copy > span, .reflection-prompt > span { color: #d5ae68; font-size: 8px; font-weight: 700; letter-spacing: .13em; }
+.action-copy p, .reflection-prompt p { margin-top: 8px; color: #c0b3c3; font-size: 11px; line-height: 1.7; }
+.reflection-prompt p { color: #d8c9b2; font-style: italic; }
+.closing-reading { margin-top: 24px; padding: 20px 22px; border-top: 1px solid rgba(213,174,104,.19); border-bottom: 1px solid rgba(213,174,104,.19); text-align: center; }
+.closing-reading span { color: #d5ae68; font-size: 9px; font-weight: 700; letter-spacing: .18em; }
+.closing-reading p { margin: 9px auto 0; max-width: 510px; color: #827686; font: 10px/1.8 var(--font-serif); }
 .question-echo { margin: 14px 0 2px; color: #786c7d; font: italic 11px/1.6 var(--font-serif); text-align: center; }
 .empty-guidance { display: flex; align-items: center; justify-content: center; gap: 9px; margin-top: 8px; color: #746778; font: 11px/1.5 var(--font-serif); }
 .empty-guidance span { color: #9b7b4d; font-size: 8px; }
@@ -114,6 +144,10 @@ footer span { letter-spacing: .2em; } footer p { margin: 0; font-family: var(--f
   .table-panel { min-height: 580px; padding: 36px 14px 28px; border-radius: 160px 160px 20px 20px; } .table-panel::before { border-radius: 150px 150px 14px 14px; }
   .moon-orbit { width: 66px; height: 66px; } .card-stage { min-height: 275px; gap: 6px; } .tarot-card { width: 156px; } .three-card .tarot-card { width: 31%; }
   .three-card .card-title strong { font-size: 13px; } .three-card .card-glyph { font-size: 31px; } .three-card .card-arch { margin-top: 12px; } .spread-switch button { padding: 12px 10px; }
+  .reading-overview { padding: 19px; } .overview-path { grid-template-columns: 1fr; }
+  .domain-grid { grid-template-columns: 1fr; margin-left: 0; }
+  .action-guidance { grid-template-columns: 1fr; margin-left: 0; }
+  .core-reading, .question-reading, .detail-domain-title { grid-template-columns: 24px 1fr; gap: 8px; }
   footer { padding: 24px 20px; flex-direction: column; gap: 8px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; } }
