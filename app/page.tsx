@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { ArrowLeftRight, ChevronRight, MoonStar, RotateCcw, Shuffle, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MoonStar, RotateCcw, Save, Shuffle, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -207,6 +207,121 @@ const majorHealth = [
 ];
 
 type DrawnCard = TarotCard & { reversed: boolean };
+type AppView = 'reading' | 'library' | 'history';
+type LibraryFilter = 'all' | 'major' | 'wands' | 'cups' | 'swords' | 'pentacles' | 'court';
+type SavedReading = {
+  id: string;
+  createdAt: number;
+  question: string;
+  spread: Spread;
+  cards: { id: number; reversed: boolean }[];
+};
+
+const HISTORY_KEY = 'xingqi-tarot-readings-v1';
+
+function cardImagePath(card: TarotCard) {
+  if (card.arcana !== 'minor') return `/cards/major-${String(card.id).padStart(2, '0')}.webp`;
+  const suitIndex = ((card.id - 22) % 14) + 1;
+  return `/cards/${card.suit}-${String(suitIndex).padStart(2, '0')}.webp`;
+}
+
+const majorSymbols = [
+  '白玫瑰、悬崖与小狗象征纯真、未知和冒险前的本能提醒。',
+  '无限符号、四元素工具与上下相连的手势象征意志将潜能带入现实。',
+  '黑白双柱、石榴帷幕与月冠象征直觉、二元世界和被遮蔽的知识。',
+  '麦田、星冠与丰盛自然象征孕育、感官经验和创造生命的能力。',
+  '石座、铠甲与公羊象征结构、保护、权威和稳定边界。',
+  '圣殿、钥匙与两位信徒象征传统传承、共同信念和制度性学习。',
+  '天使、两个人物与生命之树象征关系、价值一致和有意识的选择。',
+  '双狮身人面兽、星冠与战车象征驾驭相反力量并朝同一方向前进。',
+  '女人与狮子、无限符号象征温柔的勇气、本能整合和持久自制。',
+  '高山、提灯与手杖象征独处求索、经验照明和谨慎前行。',
+  '转轮、四方守护者与神秘符号象征周期、机缘和不可停止的变化。',
+  '天平、宝剑与红袍象征事实衡量、因果责任和清晰裁决。',
+  '倒悬姿态与头部光环象征主动暂停、牺牲旧视角和意识转变。',
+  '白马、黑旗与升起的太阳象征不可逆的结束、净化和新阶段。',
+  '两只杯、水流与一脚入水象征调和、耐心试验和身心整合。',
+  '锁链、火炬与倒五芒星象征欲望、依附，以及看见束缚后拿回选择。',
+  '雷击、高塔与坠落王冠象征虚假结构崩解、真相突现和被迫重建。',
+  '八芒星、水流与裸身人物象征希望、疗愈、坦诚和与更大秩序连接。',
+  '月、双塔、犬狼与水中生物象征潜意识、恐惧投射和信息未明。',
+  '太阳、向日葵与白马上的孩子象征生命力、坦率、成功和被看见。',
+  '号角、复起人物与群山象征觉醒、复盘过去和回应新的召唤。',
+  '花环、四方守护者与舞者象征完成、整合、自由和循环圆满。',
+];
+
+function visualSymbolism(card: TarotCard) {
+  if (card.arcana !== 'minor') return majorSymbols[card.id];
+  const suitSymbols: Record<string, string> = {
+    wands: '权杖与火元素强调意志、创造、行动和向外扩张。',
+    cups: '圣杯与水元素强调情感、直觉、关系和接纳能力。',
+    swords: '宝剑与风元素强调思想、真相、冲突和清晰判断。',
+    pentacles: '星币与土元素强调金钱、身体、技能和可持续成果。',
+  };
+  const rankSymbol = ['侍从','骑士','王后','国王'].includes(card.rank || '')
+    ? `${card.rank}代表这股元素从学习、行动、内在掌握到外在领导的成熟阶段。`
+    : `${card.rank}对应这一元素在现实事件中的阶段、数量与发展节奏。`;
+  return `${suitSymbols[card.suit || 'wands']} ${rankSymbol}`;
+}
+
+function combinationMeanings(card: TarotCard) {
+  if (card.arcana !== 'minor') {
+    return [
+      `与另一张大阿卡纳同现：${card.name}所代表的课题会成为本次牌阵的重要转折，而不只是短期事件。`,
+      `与权杖牌同现：把“${card.upright}”落实为主动选择、创造或行动。`,
+      `与圣杯牌同现：需要观察“${card.upright}”背后的感受、关系与直觉反应。`,
+    ];
+  }
+  const partners: Record<string, string> = {
+    wands: '宝剑会让行动获得方向，圣杯过多则可能让热情与情绪互相拉扯。',
+    cups: '星币能为感受提供稳定容器，权杖过强则可能让关系节奏过快。',
+    swords: '权杖能把想法转成行动，星币过重则可能造成思维与现实条件的僵持。',
+    pentacles: '圣杯让现实投入更有情感意义，宝剑过强则可能让安全感受到挑战。',
+  };
+  return [
+    `与同花色牌同现：${card.suitLabel}主题被放大，“${card.upright}”会成为局面主轴。`,
+    partners[card.suit || 'wands'],
+    `与大阿卡纳同现：${card.name}更像重大课题在日常生活中的具体表现。`,
+  ];
+}
+
+function readingStructure(drawn: DrawnCard[], spread: Spread) {
+  const majorCount = drawn.filter((card) => card.arcana !== 'minor').length;
+  const reversedCount = drawn.filter((card) => card.reversed).length;
+  const suits = { wands: 0, cups: 0, swords: 0, pentacles: 0 };
+  drawn.forEach((card) => { if (card.arcana === 'minor' && card.suit) suits[card.suit] += 1; });
+  const suitEntries = Object.entries(suits) as [keyof typeof suits, number][];
+  const dominant = suitEntries.sort((a,b) => b[1] - a[1])[0];
+  const suitLabels = { wands: '权杖／火', cups: '圣杯／水', swords: '宝剑／风', pentacles: '星币／土' };
+  const ranks = new Map<string,number>();
+  drawn.forEach((card) => { if (card.rank) ranks.set(card.rank, (ranks.get(card.rank) || 0) + 1); });
+  const repeats = [...ranks.entries()].filter(([,count]) => count > 1).map(([rank,count]) => `${rank}×${count}`);
+  const courts = drawn.filter((card) => card.rank && ['侍从','骑士','王后','国王'].includes(card.rank)).length;
+  const adjacency = drawn.slice(0,-1).map((card,index) => {
+    const next = drawn[index + 1];
+    if (card.arcana !== 'minor' || next.arcana !== 'minor') return `${card.name} → ${next.name}：大阿卡纳介入相邻位置，使这一步成为整组牌的关键转折。`;
+    if (card.suit === next.suit) return `${card.name} → ${next.name}：同为${card.suitLabel}，能量连续并被明显加强。`;
+    const supportive = new Set(['wands-swords','swords-wands','cups-pentacles','pentacles-cups']);
+    const key = `${card.suit}-${next.suit}`;
+    return supportive.has(key)
+      ? `${card.name} → ${next.name}：${card.element}与${next.element}形成支持，前一张的课题较容易转成下一步。`
+      : `${card.name} → ${next.name}：${card.element}与${next.element}存在节奏差，需要协调感受、想法与现实行动。`;
+  });
+  const turnIndex = drawn.findIndex((card,index) => index > 0 && (card.arcana !== 'minor' || card.reversed !== drawn[index - 1].reversed));
+  const turning = drawn[Math.max(0, turnIndex)];
+  const actionIndex = spread === 'career' ? 5 : spread === 'relationship' ? 5 : spread === 'celtic' ? 9 : drawn.length - 1;
+  return {
+    majorCount,
+    reversedCount,
+    suits,
+    dominantLabel: dominant[1] ? suitLabels[dominant[0]] : '大阿卡纳主导',
+    repeats,
+    courts,
+    adjacency,
+    mainline: `${drawn[0].name}开启问题，${turning.name}构成主要转折，${drawn[drawn.length - 1].name}显示当前路径最可能抵达的方向。`,
+    advice: guideFor(drawn[actionIndex]).action,
+  };
+}
 
 function orientationNote(card: DrawnCard) {
   return card.reversed
@@ -264,7 +379,26 @@ function synthesisText(drawn: DrawnCard[], spread: Spread) {
   return `年度主题由${drawn[0].name}统领，其余十二张牌分别落入十二个生活宫位。大阿卡纳出现于某一宫位时，通常表示该领域是年度重要课题；逆位较多的宫位更需要整理、修正或放慢。${energy}`;
 }
 
+function encodeReading(reading: SavedReading) {
+  const bytes = new TextEncoder().encode(JSON.stringify(reading));
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
+}
+
+function decodeReading(value: string): SavedReading | null {
+  try {
+    const normalized = value.replaceAll('-','+').replaceAll('_','/');
+    const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes)) as SavedReading;
+  } catch {
+    return null;
+  }
+}
+
 export default function Home() {
+  const [view, setView] = useState<AppView>('reading');
   const [spread, setSpread] = useState<Spread>('single');
   const [question, setQuestion] = useState('');
   const [drawn, setDrawn] = useState<DrawnCard[]>([]);
@@ -272,19 +406,187 @@ export default function Home() {
   const [selectedCards, setSelectedCards] = useState<DrawnCard[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isShuffling, setIsShuffling] = useState(false);
+  const [history, setHistory] = useState<SavedReading[]>([]);
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
+  const [libraryCardId, setLibraryCardId] = useState(0);
+  const [notice, setNotice] = useState('');
+  const [isSharedReading, setIsSharedReading] = useState(false);
   const fanRef = useRef<HTMLDivElement>(null);
   const spreadInfo = spreadDefinitions[spread];
+  const structure = drawn.length ? readingStructure(drawn, spread) : null;
 
   const subtitle = useMemo(
     () => spreadDefinitions[spread].description,
     [spread],
   );
 
+  const libraryCards = useMemo(() => cards.filter((card) => {
+    const queryMatch = !libraryQuery.trim() || `${card.name} ${card.en} ${card.upright} ${card.reversed}`.toLowerCase().includes(libraryQuery.trim().toLowerCase());
+    const filterMatch = libraryFilter === 'all'
+      || (libraryFilter === 'major' && card.arcana !== 'minor')
+      || (libraryFilter === 'court' && card.arcana === 'minor' && ['侍从','骑士','王后','国王'].includes(card.rank || ''))
+      || (card.arcana === 'minor' && card.suit === libraryFilter);
+    return queryMatch && filterMatch;
+  }), [libraryQuery, libraryFilter]);
+
+  const libraryCard = libraryCards.find((card) => card.id === libraryCardId) || libraryCards[0] || cards[0];
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as SavedReading[];
+      setHistory(Array.isArray(stored) ? stored.slice(0,30) : []);
+    } catch {
+      setHistory([]);
+    }
+    const sharedValue = new URLSearchParams(window.location.hash.slice(1)).get('reading');
+    if (!sharedValue) return;
+    const shared = decodeReading(sharedValue);
+    if (!shared || !spreadDefinitions[shared.spread]) return;
+    const restored = shared.cards.map((entry) => {
+      const card = cards.find((item) => item.id === entry.id);
+      return card ? { ...card, reversed: Boolean(entry.reversed) } : null;
+    }).filter(Boolean) as DrawnCard[];
+    if (restored.length !== spreadDefinitions[shared.spread].positions.length) return;
+    setSpread(shared.spread);
+    setQuestion(shared.question || '');
+    setDrawn(restored);
+    setIsSharedReading(true);
+    setView('reading');
+  }, []);
+
   useEffect(() => {
     if (!isSelecting || !fanRef.current) return;
     const fan = fanRef.current;
     fan.scrollLeft = Math.max(0, (fan.scrollWidth - fan.clientWidth) / 2);
   }, [isSelecting, selectionDeck]);
+
+  function showNotice(message: string) {
+    setNotice(message);
+    window.setTimeout(() => setNotice(''), 2400);
+  }
+
+  function makeReading(cardList: DrawnCard[], createdAt = Date.now()): SavedReading {
+    return {
+      id: `${createdAt}-${Math.random().toString(36).slice(2,8)}`,
+      createdAt,
+      question,
+      spread,
+      cards: cardList.map((card) => ({ id: card.id, reversed: card.reversed })),
+    };
+  }
+
+  function persistReading(cardList = drawn) {
+    if (!cardList.length) return;
+    const record = makeReading(cardList);
+    setHistory((current) => {
+      const next = [record, ...current].slice(0,30);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    showNotice('本次解读已保存到这台设备');
+  }
+
+  function restoreReading(record: SavedReading) {
+    const restored = record.cards.map((entry) => {
+      const card = cards.find((item) => item.id === entry.id);
+      return card ? { ...card, reversed: entry.reversed } : null;
+    }).filter(Boolean) as DrawnCard[];
+    if (restored.length !== spreadDefinitions[record.spread].positions.length) return;
+    setSpread(record.spread);
+    setQuestion(record.question);
+    setDrawn(restored);
+    setIsSharedReading(false);
+    setView('reading');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function removeHistory(id: string) {
+    setHistory((current) => {
+      const next = current.filter((item) => item.id !== id);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function readingText() {
+    if (!drawn.length) return '';
+    const structure = readingStructure(drawn, spread);
+    const cardSections = drawn.map((card,index) => {
+      const position = spreadInfo.positions[index];
+      return `${String(index + 1).padStart(2,'0')} · ${position.name}｜${card.name}（${card.reversed ? '逆位' : '正位'}）\n关键词：${card.reversed ? card.reversed : card.upright}\n${positionMeaning(card, position)}\n爱情：${domainMeaning(card,'love')}\n事业：${domainMeaning(card,'career')}\n财运：${domainMeaning(card,'money')}\n健康：${domainMeaning(card,'health')}`;
+    });
+    return `星契 Tarot｜${spreadInfo.name}\n${question ? `问题：${question}\n` : ''}${synthesisText(drawn, spread)}\n\n能量结构：大阿卡纳 ${structure.majorCount}/${drawn.length}，逆位 ${structure.reversedCount}/${drawn.length}，主导元素 ${structure.dominantLabel}。\n主线：${structure.mainline}\n相邻关系：\n${structure.adjacency.join('\n')}\n最终建议：${structure.advice}\n\n${cardSections.join('\n\n')}\n\n塔罗呈现的是当下能量与可能路径，不替代现实证据与专业建议。`;
+  }
+
+  async function copyFullReading() {
+    await navigator.clipboard.writeText(readingText());
+    showNotice('完整解读已复制');
+  }
+
+  async function copyShareLink() {
+    if (!drawn.length) return;
+    const record = makeReading(drawn);
+    const link = `${window.location.origin}${window.location.pathname}#reading=${encodeReading(record)}`;
+    await navigator.clipboard.writeText(link);
+    showNotice('只读分享链接已复制');
+  }
+
+  async function exportShareImage() {
+    if (!drawn.length) return;
+    const structure = readingStructure(drawn, spread);
+    const columns = Math.min(5, drawn.length);
+    const rows = Math.ceil(drawn.length / columns);
+    const canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 650 + rows * 275;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.fillStyle = '#120c1d';
+    context.fillRect(0,0,canvas.width,canvas.height);
+    const glow = context.createRadialGradient(540,260,30,540,260,650);
+    glow.addColorStop(0,'rgba(118,72,137,.26)'); glow.addColorStop(1,'rgba(18,12,29,0)');
+    context.fillStyle = glow; context.fillRect(0,0,canvas.width,canvas.height);
+    context.strokeStyle = 'rgba(213,174,104,.45)'; context.lineWidth = 2; context.strokeRect(34,34,1012,canvas.height-68);
+    context.fillStyle = '#d5ae68'; context.font = '700 22px Arial'; context.fillText('✦ 星契 TAROT',70,92);
+    context.fillStyle = '#f4ead7'; context.font = '52px Georgia, serif'; context.fillText(spreadInfo.name,70,166);
+    context.fillStyle = '#aa9bb8'; context.font = '24px Arial';
+    const date = new Date().toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric'});
+    context.fillText(`${date} · ${drawn.length} 张牌`,70,210);
+    if (question) { context.fillStyle = '#d9cbb9'; context.font = '24px Georgia, serif'; context.fillText(`问：${question.slice(0,34)}`,70,258); }
+    context.fillStyle = '#c6b8c9'; context.font = '22px Georgia, serif';
+    const summary = `大阿卡纳 ${structure.majorCount}/${drawn.length} · 逆位 ${structure.reversedCount}/${drawn.length} · 主导 ${structure.dominantLabel}`;
+    context.fillText(summary,70,question ? 312 : 270);
+    const startY = question ? 370 : 330;
+    const cardWidth = 142, cardHeight = 245, gap = 34;
+    const rowWidth = columns * cardWidth + (columns - 1) * gap;
+    const startX = (canvas.width - rowWidth) / 2;
+    const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve,reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src; });
+    const images = await Promise.all(drawn.map((card) => loadImage(cardImagePath(card))));
+    images.forEach((image,index) => {
+      const column = index % columns, row = Math.floor(index / columns);
+      const x = startX + column * (cardWidth + gap), y = startY + row * 275;
+      context.save();
+      if (drawn[index].reversed) { context.translate(x + cardWidth/2,y + cardHeight/2); context.rotate(Math.PI); context.drawImage(image,-cardWidth/2,-cardHeight/2,cardWidth,cardHeight); }
+      else context.drawImage(image,x,y,cardWidth,cardHeight);
+      context.restore();
+      context.fillStyle = '#f4ead7'; context.font = '18px Arial'; context.textAlign = 'center';
+      context.fillText(`${index+1}. ${drawn[index].name}${drawn[index].reversed ? '·逆' : ''}`,x+cardWidth/2,y+cardHeight+25);
+    });
+    context.textAlign = 'left'; context.fillStyle = '#d5ae68'; context.font = '700 21px Arial';
+    const footerY = startY + rows * 275 + 45;
+    context.fillText('牌阵主线',70,footerY);
+    context.fillStyle = '#c6b8c9'; context.font = '21px Georgia, serif';
+    const line = structure.mainline.length > 42 ? `${structure.mainline.slice(0,42)}…` : structure.mainline;
+    context.fillText(line,70,footerY+38);
+    context.fillStyle = '#6f6379'; context.font = '16px Arial'; context.fillText('塔罗用于自我反思，不替代医疗、法律或投资等专业建议。',70,canvas.height-72);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve,'image/png'));
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `星契塔罗-${spreadInfo.name}-${Date.now()}.png`; anchor.click();
+    URL.revokeObjectURL(url);
+    showNotice('分享图已生成');
+  }
 
   function shuffledDeck() {
     const deck = cards.map((card) => ({ ...card, reversed: Math.random() < 0.28 }));
@@ -299,6 +601,7 @@ export default function Home() {
     setIsShuffling(true);
     setDrawn([]);
     setSelectedCards([]);
+    setIsSharedReading(false);
     window.setTimeout(() => {
       setSelectionDeck(shuffledDeck());
       setIsSelecting(true);
@@ -328,6 +631,7 @@ export default function Home() {
   function revealSelection() {
     if (selectedCards.length !== spreadInfo.positions.length) return;
     setDrawn(selectedCards);
+    persistReading(selectedCards);
     setIsSelecting(false);
     setSelectionDeck([]);
     setSelectedCards([]);
@@ -339,18 +643,25 @@ export default function Home() {
     setSelectionDeck([]);
     setSelectedCards([]);
     setIsSelecting(false);
+    setIsSharedReading(false);
   }
 
   return (
     <main className="min-h-screen overflow-hidden">
       <div className="stars" aria-hidden="true" />
       <header className="site-header">
-        <a href="#top" className="brand" aria-label="星契塔罗首页">
+        <a href="#top" className="brand" aria-label="星契塔罗首页" onClick={() => setView('reading')}>
           <span className="brand-mark">✦</span><span>星契</span><span className="brand-en">TAROT</span>
         </a>
-        <span className="header-note"><MoonStar aria-hidden="true" /> 78 张完整牌组 · 7 种牌阵</span>
+        <nav className="site-nav" aria-label="主要功能">
+          <button className={view === 'reading' ? 'active' : ''} onClick={() => setView('reading')}><MoonStar aria-hidden="true" />抽牌</button>
+          <button className={view === 'library' ? 'active' : ''} onClick={() => setView('library')}><BookOpen aria-hidden="true" />牌库</button>
+          <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />历史</button>
+        </nav>
       </header>
 
+      {notice && <div className="site-notice" role="status">{notice}</div>}
+      {view === 'reading' && (
       <section id="top" className={`reading-shell ${isSelecting ? 'selecting-mode' : ''}`}>
         {isSelecting ? (
           <div className="selection-ritual">
@@ -417,9 +728,7 @@ export default function Home() {
                   <div className={`selected-slot ${card ? 'filled' : ''}`} key={`selected-slot-${position.name}`}>
                     {card ? (
                       <>
-                        <div className={`picked-card-face ${card.reversed ? 'is-reversed' : ''}`}>
-                          <span>{card.glyph}</span><strong>{card.name}</strong><small>{card.en}</small>
-                        </div>
+                        <div className={`picked-card-face ${card.reversed ? 'is-reversed' : ''}`}><img src={cardImagePath(card)} alt={`${card.name}牌面`} /></div>
                         <p>{position.short} · {card.reversed ? '逆位' : '正位'}</p>
                       </>
                     ) : (
@@ -474,9 +783,7 @@ export default function Home() {
                 <article className={`tarot-card ${card ? 'revealed' : ''}`} key={card?.id ?? `back-${index}`} style={{ animationDelay: `${index * 150}ms` }}>
                   {card ? (
                     <div className={`card-face ${card.reversed ? 'is-reversed' : ''}`}>
-                      <span className="card-number">{card.arcana === 'minor' ? `${card.suitLabel} ${card.rank}` : String(card.id).padStart(2, '0')}</span><span className="corner-star">✦</span>
-                      <div className="card-arch"><span className="card-glyph">{card.glyph}</span><span className="orbit-dot" /></div>
-                      <div className="card-title"><small>{card.arcana === 'minor' ? `${card.element} · 小阿卡纳` : '大阿卡纳'}</small><strong>{card.name}</strong><span>{card.en}</span></div>
+                      <img className="rws-card-image" src={cardImagePath(card)} alt={`${card.name}韦特牌面`} />
                     </div>
                   ) : (
                     <div className="card-back" aria-label="尚未翻开的塔罗牌">
@@ -491,6 +798,7 @@ export default function Home() {
 
           {drawn.length > 0 ? (
             <div className="interpretations">
+              {isSharedReading && <div className="shared-reading-banner"><Link2 aria-hidden="true" /><span><b>只读分享解读</b>你正在查看由分享链接还原的牌阵；它不会自动写入你的历史记录。</span></div>}
               <section className="reading-overview">
                 <span className="overview-label">本次牌阵总览</span>
                 <h3>{spreadInfo.name} · {drawn.length} 张</h3>
@@ -502,7 +810,28 @@ export default function Home() {
                     ))}
                   </div>
                 )}
+                <div className="reading-tools" aria-label="保存与分享">
+                  <button onClick={() => persistReading()}><Save aria-hidden="true" />保存本次解读</button>
+                  <button onClick={copyFullReading}><Copy aria-hidden="true" />复制完整文字</button>
+                  <button onClick={exportShareImage}><Download aria-hidden="true" />导出分享图</button>
+                  <button onClick={copyShareLink}><Link2 aria-hidden="true" />复制只读链接</button>
+                </div>
               </section>
+
+              {structure && <section className="structure-reading">
+                <div className="structure-heading"><span>跨牌综合分析</span><h3>牌与牌之间如何共同说话</h3></div>
+                <div className="structure-stats">
+                  <div><span>大阿卡纳比例</span><b>{structure.majorCount}／{drawn.length}</b><small>{structure.majorCount > drawn.length / 2 ? '重大人生课题主导' : '日常选择与现实事件主导'}</small></div>
+                  <div><span>正逆位结构</span><b>{drawn.length - structure.reversedCount} 正 · {structure.reversedCount} 逆</b><small>{structure.reversedCount > drawn.length / 2 ? '先整理阻力再推进' : '可用行动能量较多'}</small></div>
+                  <div><span>主导元素</span><b>{structure.dominantLabel}</b><small>权杖{structure.suits.wands} · 圣杯{structure.suits.cups} · 宝剑{structure.suits.swords} · 星币{structure.suits.pentacles}</small></div>
+                  <div><span>数字与宫廷牌</span><b>{structure.repeats.length ? structure.repeats.join(' · ') : '无重复数字'}</b><small>宫廷牌 {structure.courts} 张</small></div>
+                </div>
+                <div className="structure-narrative">
+                  <section><span>牌阵主线</span><p>{structure.mainline}</p></section>
+                  <section><span>转折与相邻关系</span><ol>{structure.adjacency.map((note,index) => <li key={`${index}-${note}`}>{note}</li>)}</ol></section>
+                  <section className="structure-advice"><span>最终整合建议</span><p>{structure.advice}</p></section>
+                </div>
+              </section>}
 
               {drawn.map((card, index) => {
                 const guide = guideFor(card);
@@ -577,6 +906,81 @@ export default function Home() {
         </>
         )}
       </section>
+      )}
+
+      {view === 'library' && (
+        <section className="library-shell" id="library">
+          <div className="section-heading">
+            <p className="eyebrow"><span /> 78-CARD ENCYCLOPEDIA</p>
+            <h1>韦特塔罗牌库</h1>
+            <p>浏览完整78张韦特—史密斯牌面，检索标准正逆位、图像象征、生活领域、牌阵位置与组合关系。</p>
+          </div>
+          <div className="library-toolbar">
+            <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="搜索牌名、英文名或关键词" aria-label="搜索牌库" />
+            <div className="library-filters" aria-label="牌库筛选">
+              {([['all','全部'],['major','大阿卡纳'],['wands','权杖'],['cups','圣杯'],['swords','宝剑'],['pentacles','星币'],['court','宫廷牌']] as [LibraryFilter,string][]).map(([key,label]) => (
+                <button key={key} className={libraryFilter === key ? 'active' : ''} onClick={() => setLibraryFilter(key)}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="library-layout">
+            <div className="library-grid" aria-label={`共${libraryCards.length}张牌`}>
+              {libraryCards.map((card) => (
+                <button key={`library-${card.id}`} className={libraryCard.id === card.id ? 'active' : ''} onClick={() => setLibraryCardId(card.id)}>
+                  <img src={cardImagePath(card)} alt={`${card.name}韦特牌面`} loading="lazy" />
+                  <span><strong>{card.name}</strong><small>{card.en}</small></span>
+                </button>
+              ))}
+              {!libraryCards.length && <p className="library-empty">没有符合条件的牌，请更换关键词或筛选。</p>}
+            </div>
+            <aside className="card-encyclopedia">
+              <div className="encyclopedia-hero">
+                <img src={cardImagePath(libraryCard)} alt={`${libraryCard.name}完整韦特牌面`} />
+                <div><span>{libraryCard.arcana === 'minor' ? `${libraryCard.suitLabel} · ${libraryCard.element}` : '大阿卡纳'}</span><h2>{libraryCard.name}</h2><p>{libraryCard.en}</p></div>
+              </div>
+              <section><h3>图像象征</h3><p>{visualSymbolism(libraryCard)}</p></section>
+              <div className="encyclopedia-pair">
+                <section><h3>标准正位</h3><b>{libraryCard.upright}</b><p>{libraryCard.uprightMeaning}</p></section>
+                <section><h3>标准逆位</h3><b>{libraryCard.reversed}</b><p>{libraryCard.reversedMeaning}</p></section>
+              </div>
+              <section><h3>爱情、事业、财运与健康</h3><div className="encyclopedia-domains">
+                <p><b>爱情</b>{domainMeaning({ ...libraryCard, reversed: false },'love')}</p>
+                <p><b>事业</b>{domainMeaning({ ...libraryCard, reversed: false },'career')}</p>
+                <p><b>财运</b>{domainMeaning({ ...libraryCard, reversed: false },'money')}</p>
+                <p><b>健康</b>{domainMeaning({ ...libraryCard, reversed: false },'health')}</p>
+              </div></section>
+              <section><h3>不同牌阵位置</h3><div className="position-examples">
+                {[spreadDefinitions.three.positions[0],spreadDefinitions.celtic.positions[1],spreadDefinitions.career.positions[5],spreadDefinitions.relationship.positions[6]].map((position) => (
+                  <p key={position.name}><b>{position.name}</b>{positionMeaning({ ...libraryCard, reversed: false },position)}</p>
+                ))}
+              </div></section>
+              <section><h3>常见组合牌义</h3><ul>{combinationMeanings(libraryCard).map((meaning) => <li key={meaning}>{meaning}</li>)}</ul></section>
+              <p className="image-credit">牌面采用 Pamela Colman Smith 的经典韦特—史密斯图像；本组扫描来自 <a href="https://commons.wikimedia.org/wiki/Category:Rider-Waite-Smith_tarot_deck_(TaionWC)" target="_blank" rel="noreferrer">Wikimedia Commons 公版图像集</a>。</p>
+            </aside>
+          </div>
+        </section>
+      )}
+
+      {view === 'history' && (
+        <section className="history-shell" id="history">
+          <div className="section-heading">
+            <p className="eyebrow"><span /> YOUR READING ARCHIVE</p>
+            <h1>历史解读</h1>
+            <p>最近30次解读保存在当前设备中，不会上传你的问题。打开记录后可以继续复制、导出或生成只读链接。</p>
+          </div>
+          {history.length ? <div className="history-list">
+            {history.map((record) => {
+              const definition = spreadDefinitions[record.spread];
+              const previewCards = record.cards.slice(0,5).map((entry) => cards.find((card) => card.id === entry.id)).filter(Boolean) as TarotCard[];
+              return <article key={record.id} className="history-item">
+                <div className="history-card-stack">{previewCards.map((card,index) => <img key={`${record.id}-${card.id}`} src={cardImagePath(card)} alt="" style={{ transform: `translateX(${index * 24}px) rotate(${(index - 2) * 3}deg)` }} />)}</div>
+                <div className="history-copy"><span>{new Date(record.createdAt).toLocaleString('zh-CN')}</span><h2>{definition.name} · {record.cards.length}张</h2><p>{record.question || '未填写问题'}</p></div>
+                <div className="history-actions"><Button onClick={() => restoreReading(record)}>打开解读</Button><button onClick={() => removeHistory(record.id)}>删除</button></div>
+              </article>;
+            })}
+          </div> : <div className="history-empty"><span>☾</span><h2>还没有保存的解读</h2><p>完成一次抽牌后，记录会自动出现在这里。</p><Button onClick={() => setView('reading')}>开始第一次抽牌</Button></div>}
+        </section>
+      )}
 
       <footer><span>星契 TAROT</span><p>把牌当作一面镜子，把选择留在自己手中。</p></footer>
     </main>
