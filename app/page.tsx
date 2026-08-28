@@ -588,13 +588,31 @@ export default function Home() {
     showNotice('分享图已生成');
   }
 
-  function shuffledDeck() {
-    const deck = cards.map((card) => ({ ...card, reversed: Math.random() < 0.28 }));
-    for (let index = deck.length - 1; index > 0; index -= 1) {
-      const swapIndex = Math.floor(Math.random() * (index + 1));
-      [deck[index], deck[swapIndex]] = [deck[swapIndex], deck[index]];
+  function secureRandomIndex(upperBound: number) {
+    const range = 0x100000000;
+    const unbiasedLimit = range - (range % upperBound);
+    const value = new Uint32Array(1);
+    do window.crypto.getRandomValues(value); while (value[0] >= unbiasedLimit);
+    return value[0] % upperBound;
+  }
+
+  function secureShuffle<T>(items: T[]) {
+    const shuffled = [...items];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = secureRandomIndex(index + 1);
+      [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
     }
-    return deck;
+    return shuffled;
+  }
+
+  function shuffledDeck() {
+    const shuffledCards = secureShuffle(cards);
+    const halfDeck = cards.length / 2;
+    const orientations = secureShuffle([
+      ...Array.from({ length: halfDeck }, () => false),
+      ...Array.from({ length: halfDeck }, () => true),
+    ]);
+    return shuffledCards.map((card, index) => ({ ...card, reversed: orientations[index] }));
   }
 
   function drawCards() {
@@ -745,7 +763,7 @@ export default function Home() {
           <p className="eyebrow"><span /> A QUIET MOMENT FOR YOU</p>
           <h1>让牌面映见<br />你心中的答案</h1>
           <p className="intro-copy">完整收录22张大阿卡纳与56张小阿卡纳，依据韦特体系的经典象征与正逆位牌义，照亮你已经感受到、却还没说出口的事。</p>
-          <p className="deck-badge"><span>78</span> 张完整牌组 · 7 种牌阵 · 正逆位深度解读</p>
+          <p className="deck-badge"><span>78</span> 张完整牌组 · 7 种牌阵 · 正逆位 50 / 50</p>
 
           <div className="spread-switch spread-catalog" aria-label="选择牌阵">
             {(Object.entries(spreadDefinitions) as [Spread, SpreadDefinition][]).map(([key, definition]) => (
