@@ -5,6 +5,7 @@ import { MoonStar, RotateCcw, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { minorCards, minorDomainMeaning, type DeckCard, type Domain } from '@/lib/tarot-deck';
 
 type Spread = 'single' | 'three';
 type TarotCard = {
@@ -15,9 +16,16 @@ type TarotCard = {
   upright: string;
   reversed: string;
   message: string;
+  uprightMeaning?: string;
+  reversedMeaning?: string;
+  arcana?: 'major' | 'minor';
+  suit?: DeckCard['suit'];
+  suitLabel?: string;
+  rank?: string;
+  element?: string;
 };
 
-const cards: TarotCard[] = [
+const majorCards: TarotCard[] = [
   { id: 0, name: '愚者', en: 'THE FOOL', glyph: '✦', upright: '启程 · 自由 · 信任', reversed: '迟疑 · 冒进 · 漂泊', message: '允许自己先迈出一步。答案不会在原地出现，而会在路上逐渐清晰。' },
   { id: 1, name: '魔术师', en: 'THE MAGICIAN', glyph: '∞', upright: '创造 · 意志 · 行动', reversed: '分心 · 欺瞒 · 潜能未用', message: '你需要的工具其实已经在手中。把注意力收回，专注完成最关键的一件事。' },
   { id: 2, name: '女祭司', en: 'THE HIGH PRIESTESS', glyph: '☽', upright: '直觉 · 静观 · 秘密', reversed: '封闭 · 忽视直觉 · 表象', message: '先别急着解释一切。安静片刻，你的第一感受往往比分析更接近真相。' },
@@ -42,10 +50,21 @@ const cards: TarotCard[] = [
   { id: 21, name: '世界', en: 'THE WORLD', glyph: '◎', upright: '完成 · 圆满 · 整合', reversed: '未竟 · 缺口 · 延迟完成', message: '一个循环正在收尾。认可自己走过的路，完成最后那一点，再启程。' },
 ];
 
+const cards: TarotCard[] = [
+  ...majorCards.map((card) => ({
+    ...card,
+    arcana: 'major' as const,
+    uprightMeaning: `${card.upright}。${card.message}`,
+    reversedMeaning: `${card.reversed}。这张牌的核心力量受到压抑、延迟或被过度使用，需要先处理失衡再行动。`,
+  })),
+  ...minorCards,
+];
+
 type CardGuide = {
   love: string;
   career: string;
   money: string;
+  health?: string;
   blindspot: string;
   action: string;
   reflect: string;
@@ -76,6 +95,31 @@ const cardGuides: Record<number, CardGuide> = {
   21: { love: '关系进入成熟、完成或共同迈入新阶段的时刻。单身者也可能真正结束旧循环，准备以更完整的自己进入关系。', career: '项目、学习或职业阶段接近完成，适合交付、复盘与庆祝。完成最后细节后，新的舞台会自然打开。', money: '长期规划逐渐见效，适合结算、整合账户或确认阶段性目标。不要因接近终点而忽略最后的手续与细节。', blindspot: '你可能低估完成的意义，立刻奔向下一个目标；也可能卡在最后一步，只因结束意味着身份变化。', action: '列出尚未收尾的最后三项，依次完成、记录成果并安排一次正式庆祝。', reflect: '这段旅程已经让我成为了怎样的人？我想带着什么进入下一个循环？' },
 };
 
+const majorHealth = [
+  '活力与身体状态容易随生活节奏变化，适合尝试新的健康习惯，但要避免忽视风险或准备不足。',
+  '关注手部、神经与专注力的协调；主动建立规律，会比不断更换方法更有效。',
+  '身体正在要求安静、睡眠与对细微信号的倾听；不明症状应以专业检查确认。',
+  '强调营养、休息、生殖与身体滋养；照顾别人之前也要确认自己的能量储备。',
+  '骨骼、姿势、结构与规律性是重点；稳定作息有帮助，但避免因意志强撑而延误处理。',
+  '适合遵循成熟、专业的照护方案；不要仅依赖传统经验而忽略个人差异。',
+  '健康选择需要身心一致，也可能涉及伴侣共同习惯；避免为迎合别人忽略自身需要。',
+  '行动力上升，适合有计划地运动和康复；过快、过量或忽略身体反馈容易造成消耗。',
+  '恢复力与韧性较强，温和持续胜过短期猛冲；情绪压抑可能转成身体紧绷。',
+  '需要独处、安静与恢复性休息，也适合进行系统检查和长期健康复盘。',
+  '身体状态可能处于周期变化中，维持基础习惯并给突发波动留出缓冲。',
+  '重视检查结果、剂量、指标与客观记录；在医疗问题上坚持事实而非自我判断。',
+  '暂停和换角度有助于恢复；若进展停滞，应重新评估方法，不要无期限忍耐。',
+  '象征旧阶段结束与身体更新，适合戒除耗损习惯；它本身不代表字面死亡。',
+  '重点是平衡、代谢、补水与节奏；避免极端饮食、过度训练或忽冷忽热的生活方式。',
+  '关注成瘾、强迫、过劳和欲望驱动的习惯；承认依赖模式是恢复自主的第一步。',
+  '提醒突发风险、急性压力或旧问题暴露；出现严重不适时应及时寻求专业帮助。',
+  '适合长期疗愈、补充水分与恢复信心；小幅而持续的改善比追求立刻痊愈更可靠。',
+  '睡眠、焦虑、激素与不明感受可能互相影响；记录症状并用检查排除想象中的最坏情况。',
+  '生命力、恢复与清晰度较强，适合户外活动；同时避免过度暴晒和因乐观忽视警讯。',
+  '适合复诊、复盘旧病史和调整方案；身体的提醒需要被回应，而不是被自我苛责。',
+  '代表一个康复或训练周期的完成与整体整合；做好收尾、复查和后续维护。',
+];
+
 type DrawnCard = TarotCard & { reversed: boolean };
 const positions = ['过往', '当下', '趋势'];
 const positionFocus = [
@@ -88,6 +132,37 @@ function orientationNote(card: DrawnCard) {
   return card.reversed
     ? `这张牌以逆位出现，能量更可能表现为内在阻力、延迟或过度使用。关键词是“${card.reversed}”。它不是坏结果，而是在提醒你：先看见卡住能量的方式，再谈下一步。`
     : `这张牌以正位出现，核心力量正在较顺畅地表达。关键词是“${card.upright}”。它不保证事情自动成功，但说明你可以主动使用这份能量来推动局面。`;
+}
+
+function positionMeaning(card: DrawnCard, index: number) {
+  const meaning = card.reversed ? card.reversedMeaning : card.uprightMeaning;
+  if (index === 0) return `在过往位置，${card.name}说明“${meaning}”曾构成事件的背景、旧模式或已经积累的经验；它帮助你理解事情为何走到今天。`;
+  if (index === 1) return `在当下位置，${card.name}把“${meaning}”放到最核心的位置；这既是当前局面的写照，也是现在最能改变走向的着力点。`;
+  return `在趋势位置，${card.name}表示若维持当前选择，较可能发展出“${meaning}”的方向；它描述可调整的趋势，而不是注定发生的结果。`;
+}
+
+function domainMeaning(card: DrawnCard, domain: Domain) {
+  if (card.arcana === 'minor') return minorDomainMeaning(card as DeckCard, domain, card.reversed);
+  const guide = cardGuides[card.id];
+  const base = domain === 'health' ? majorHealth[card.id] : guide[domain];
+  return card.reversed
+    ? `${base} 逆位时，尤其要留意“${card.reversed}”如何让这一领域出现延迟、内耗或过度反应。`
+    : `${base} 正位时，可借助“${card.upright}”把理解转成稳健行动。`;
+}
+
+function guideFor(card: DrawnCard): CardGuide {
+  if (card.arcana !== 'minor') return { ...cardGuides[card.id], health: majorHealth[card.id] };
+  return {
+    love: domainMeaning(card, 'love'),
+    career: domainMeaning(card, 'career'),
+    money: domainMeaning(card, 'money'),
+    health: domainMeaning(card, 'health'),
+    blindspot: card.reversed
+      ? `主要盲点是“${card.reversed}”。逆位并不自动等于坏结果，它更常指出能量受阻、内化、延迟或被使用过度。`
+      : `正位的优势是“${card.upright}”，但任何优势推到极端都会形成盲点；请确认行动仍符合现实条件。`,
+    action: `${card.message} 先选择一个能在七天内完成、且可以观察结果的具体步骤。`,
+    reflect: `“${card.reversed ? card.reversed : card.upright}”正在我的现实中以什么方式出现？`,
+  };
 }
 
 function synthesisText(drawn: DrawnCard[]) {
@@ -140,14 +215,15 @@ export default function Home() {
         <a href="#top" className="brand" aria-label="星契塔罗首页">
           <span className="brand-mark">✦</span><span>星契</span><span className="brand-en">TAROT</span>
         </a>
-        <span className="header-note"><MoonStar aria-hidden="true" /> 静心 · 提问 · 抽牌</span>
+        <span className="header-note"><MoonStar aria-hidden="true" /> 完整 78 张 · 韦特体系</span>
       </header>
 
       <section id="top" className="reading-shell">
         <div className="intro-panel">
           <p className="eyebrow"><span /> A QUIET MOMENT FOR YOU</p>
           <h1>让牌面映见<br />你心中的答案</h1>
-          <p className="intro-copy">塔罗不替你预言命运，它只是借由象征与直觉，照亮你已经感受到、却还没说出口的事。</p>
+          <p className="intro-copy">完整收录22张大阿卡纳与56张小阿卡纳，依据韦特体系的经典象征与正逆位牌义，照亮你已经感受到、却还没说出口的事。</p>
+          <p className="deck-badge"><span>78</span> 张完整牌组 · 大阿卡纳 · 权杖 · 圣杯 · 宝剑 · 星币</p>
 
           <div className="spread-switch" aria-label="选择牌阵">
             <button className={spread === 'single' ? 'active' : ''} onClick={() => { setSpread('single'); setDrawn([]); }}>
@@ -184,9 +260,9 @@ export default function Home() {
                 <article className={`tarot-card ${card ? 'revealed' : ''}`} key={card?.id ?? `back-${index}`} style={{ animationDelay: `${index * 150}ms` }}>
                   {card ? (
                     <div className={`card-face ${card.reversed ? 'is-reversed' : ''}`}>
-                      <span className="card-number">{String(card.id).padStart(2, '0')}</span><span className="corner-star">✦</span>
+                      <span className="card-number">{card.arcana === 'minor' ? `${card.suitLabel} ${card.rank}` : String(card.id).padStart(2, '0')}</span><span className="corner-star">✦</span>
                       <div className="card-arch"><span className="card-glyph">{card.glyph}</span><span className="orbit-dot" /></div>
-                      <div className="card-title"><strong>{card.name}</strong><span>{card.en}</span></div>
+                      <div className="card-title"><small>{card.arcana === 'minor' ? `${card.element} · 小阿卡纳` : '大阿卡纳'}</small><strong>{card.name}</strong><span>{card.en}</span></div>
                     </div>
                   ) : (
                     <div className="card-back" aria-label="尚未翻开的塔罗牌">
@@ -213,11 +289,13 @@ export default function Home() {
                 )}
               </section>
 
-              {drawn.map((card, index) => (
+              {drawn.map((card, index) => {
+                const guide = guideFor(card);
+                return (
                 <article className="interpretation detailed-reading" key={`reading-${card.id}`}>
                   <div className="interpretation-heading">
                     <span>{spread === 'three' ? positions[index] : '此刻的指引'}</span>
-                    <strong>{card.name} · {card.reversed ? '逆位' : '正位'}</strong>
+                    <strong>{card.name} · {card.reversed ? '逆位' : '正位'} <small>{card.arcana === 'minor' ? `${card.suitLabel}／${card.element}` : '大阿卡纳'}</small></strong>
                   </div>
                   <p className="keywords">{card.reversed ? card.reversed : card.upright}</p>
 
@@ -227,6 +305,10 @@ export default function Home() {
                       <h4>核心讯息</h4>
                       <p>{card.message}</p>
                       <p>{orientationNote(card)}</p>
+                      <div className="canonical-pair">
+                        <div className={!card.reversed ? 'active' : ''}><span>标准正位</span><p>{card.uprightMeaning}</p></div>
+                        <div className={card.reversed ? 'active' : ''}><span>标准逆位</span><p>{card.reversedMeaning}</p></div>
+                      </div>
                     </div>
                   </section>
 
@@ -236,9 +318,9 @@ export default function Home() {
                       <h4>{question ? '与你问题的关联' : '放回你的处境中'}</h4>
                       <p>
                         {question
-                          ? `针对“${question}”，${spread === 'three' ? positionFocus[index] : '这张牌建议你先放下对唯一答案的执着，观察它指出的力量如何出现在现实细节中。'}`
+                          ? `针对“${question}”，${spread === 'three' ? positionMeaning(card, index) : `这张牌以“${card.reversed ? card.reversedMeaning : card.uprightMeaning}”回应你的问题；请把它与现实证据一同判断。`}`
                           : spread === 'three'
-                            ? positionFocus[index]
+                            ? positionMeaning(card, index)
                             : '把这张牌放回你此刻最在意的事情中：哪些细节与你的现实产生共鸣，哪些部分让你不舒服？最有反应的地方，往往正是最值得探索的线索。'}
                       </p>
                     </div>
@@ -246,24 +328,26 @@ export default function Home() {
 
                   <div className="detail-domain-title"><span>03</span><h4>不同生活领域的解读</h4></div>
                   <div className="domain-grid">
-                    <section><span>感情与关系</span><p>{cardGuides[card.id].love}</p></section>
-                    <section><span>事业与学业</span><p>{cardGuides[card.id].career}</p></section>
-                    <section><span>金钱与现实</span><p>{cardGuides[card.id].money}</p></section>
-                    <section><span>盲点与提醒</span><p>{cardGuides[card.id].blindspot}</p></section>
+                    <section><span>爱情与关系</span><p>{domainMeaning(card, 'love')}</p></section>
+                    <section><span>事业与学业</span><p>{domainMeaning(card, 'career')}</p></section>
+                    <section><span>财运与资源</span><p>{domainMeaning(card, 'money')}</p></section>
+                    <section><span>健康与身心</span><p>{domainMeaning(card, 'health')}</p></section>
+                    <section className="wide-domain"><span>盲点与提醒</span><p>{guide.blindspot}</p></section>
                   </div>
 
                   <section className="action-guidance">
                     <div className="action-copy">
                       <span>04 · 可以采取的行动</span>
-                      <p>{cardGuides[card.id].action}</p>
+                      <p>{guide.action}</p>
                     </div>
                     <div className="reflection-prompt">
                       <span>写给自己的问题</span>
-                      <p>“{cardGuides[card.id].reflect}”</p>
+                      <p>“{guide.reflect}”</p>
                     </div>
                   </section>
                 </article>
-              ))}
+              );
+              })}
 
               <section className="closing-reading">
                 <span>最后的提醒</span>
