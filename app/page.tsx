@@ -7,7 +7,93 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { minorCards, minorDomainMeaning, type DeckCard, type Domain } from '@/lib/tarot-deck';
 
-type Spread = 'single' | 'three';
+type Spread = 'single' | 'three' | 'celtic' | 'relationship' | 'choice' | 'career' | 'year';
+type SpreadPosition = { name: string; short: string; focus: string };
+type SpreadDefinition = { name: string; countLabel: string; description: string; positions: SpreadPosition[] };
+
+const spreadDefinitions: Record<Spread, SpreadDefinition> = {
+  single: {
+    name: '单牌指引', countLabel: '1张', description: '为此刻抽取一张核心指引牌',
+    positions: [{ name: '此刻的指引', short: '指引', focus: '聚焦你此刻最需要看见的主题与可采取的行动。' }],
+  },
+  three: {
+    name: '三牌展开', countLabel: '3张', description: '以过往、当下、趋势展开三张牌',
+    positions: [
+      { name: '过往', short: '过往', focus: '照见事件的根源、已经形成的惯性和从过去带来的经验。' },
+      { name: '当下', short: '当下', focus: '描述当前最核心的能量，也是此刻最能改变走向的着力点。' },
+      { name: '趋势', short: '趋势', focus: '显示沿着现有选择继续前进时较可能形成的可调整趋势。' },
+    ],
+  },
+  celtic: {
+    name: '凯尔特十字', countLabel: '10张', description: '从十个层面完整分析问题与发展趋势',
+    positions: [
+      { name: '现状', short: '现状', focus: '呈现问题当前最核心的能量与真实处境。' },
+      { name: '挑战', short: '挑战', focus: '指出横在现状上的阻碍、冲突或必须整合的力量。' },
+      { name: '意识目标', short: '目标', focus: '反映你清楚知道、正在追求或期待实现的方向。' },
+      { name: '潜意识根源', short: '根源', focus: '揭示尚未完全说出口，却持续驱动选择的深层原因。' },
+      { name: '近期过去', short: '过去', focus: '说明刚刚离开的阶段及其对当前局面的影响。' },
+      { name: '近期未来', short: '近期', focus: '显示接下来最先出现的变化、机会或考验。' },
+      { name: '你的立场', short: '自我', focus: '呈现你的态度、资源、行为方式和对自身角色的理解。' },
+      { name: '外部环境', short: '环境', focus: '指出他人、现实条件和周围环境如何影响问题。' },
+      { name: '希望与恐惧', short: '希望／恐惧', focus: '揭示期待与焦虑交织之处，以及它如何影响判断。' },
+      { name: '最终趋势', short: '结果', focus: '整合前九张牌，显示按当前路径发展时最可能抵达的方向。' },
+    ],
+  },
+  relationship: {
+    name: '感情关系', countLabel: '7张', description: '看见双方状态、关系核心与发展趋势',
+    positions: [
+      { name: '你的状态', short: '你', focus: '呈现你在关系中的感受、需求和行为方式。' },
+      { name: '对方状态', short: '对方', focus: '呈现对方目前展现出的情感状态与关系立场。' },
+      { name: '关系基础', short: '基础', focus: '指出让双方连接的共同基础、吸引力或历史原因。' },
+      { name: '当前互动', short: '互动', focus: '描述关系现在实际运行的模式与能量交换。' },
+      { name: '隐藏议题', short: '隐藏', focus: '揭示尚未被正视、却持续影响关系的深层问题。' },
+      { name: '关系需要', short: '需要', focus: '指出关系若要成长，双方最需要建立或调整的部分。' },
+      { name: '发展趋势', short: '趋势', focus: '显示维持当前互动方式时，关系较可能形成的走向。' },
+    ],
+  },
+  choice: {
+    name: '二选一决策', countLabel: '7张', description: '比较A、B两条路径的机会、代价与结果',
+    positions: [
+      { name: '决策核心', short: '核心', focus: '说明这次选择真正需要解决的核心课题。' },
+      { name: '选择A的优势', short: 'A优势', focus: '显示走向选择A时可利用的机会和支持。' },
+      { name: '选择A的代价', short: 'A代价', focus: '显示选择A需要承担的成本、风险或放弃。' },
+      { name: '选择A的趋势', short: 'A趋势', focus: '显示沿着选择A继续发展时较可能出现的结果。' },
+      { name: '选择B的优势', short: 'B优势', focus: '显示走向选择B时可利用的机会和支持。' },
+      { name: '选择B的代价', short: 'B代价', focus: '显示选择B需要承担的成本、风险或放弃。' },
+      { name: '选择B的趋势', short: 'B趋势', focus: '显示沿着选择B继续发展时较可能出现的结果。' },
+    ],
+  },
+  career: {
+    name: '事业发展', countLabel: '7张', description: '分析能力、阻碍、机会与下一步职业行动',
+    positions: [
+      { name: '职业现状', short: '现状', focus: '呈现当前事业或学业最真实的状态。' },
+      { name: '核心优势', short: '优势', focus: '指出你最值得运用的能力、经验与资源。' },
+      { name: '主要阻碍', short: '阻碍', focus: '揭示限制进展的内外部因素与惯性。' },
+      { name: '潜在机会', short: '机会', focus: '指出尚未充分利用的窗口、方向或合作可能。' },
+      { name: '外部环境', short: '环境', focus: '反映组织、行业、合作对象和现实条件的影响。' },
+      { name: '行动建议', short: '行动', focus: '说明现阶段最值得投入的具体行动方向。' },
+      { name: '发展趋势', short: '趋势', focus: '显示按当前选择继续推进时的阶段性职业走向。' },
+    ],
+  },
+  year: {
+    name: '年度十二宫', countLabel: '13张', description: '以年度主题与十二宫位观察未来一年',
+    positions: [
+      { name: '年度主题', short: '年度', focus: '统领未来一年的核心课题、整体基调与成长方向。' },
+      { name: '第一宫 · 自我', short: '自我', focus: '观察身份、外在状态、主动性与个人开始。' },
+      { name: '第二宫 · 财务', short: '财务', focus: '观察收入、资源、消费模式与自我价值。' },
+      { name: '第三宫 · 沟通', short: '沟通', focus: '观察学习、表达、短途行动与日常信息。' },
+      { name: '第四宫 · 家庭', short: '家庭', focus: '观察家庭、居所、安全感与内在根基。' },
+      { name: '第五宫 · 创造', short: '创造', focus: '观察恋爱、兴趣、创造力、孩子与快乐。' },
+      { name: '第六宫 · 工作健康', short: '工作／健康', focus: '观察日常工作、习惯、服务与身心照护。' },
+      { name: '第七宫 · 关系', short: '关系', focus: '观察伴侣、合作、契约与一对一互动。' },
+      { name: '第八宫 · 转化', short: '转化', focus: '观察共享资源、亲密、危机、债务与深层改变。' },
+      { name: '第九宫 · 远方', short: '远方', focus: '观察高等学习、旅行、信念与视野扩展。' },
+      { name: '第十宫 · 事业', short: '事业', focus: '观察职业目标、社会角色、责任与公众评价。' },
+      { name: '第十一宫 · 社群', short: '社群', focus: '观察朋友、团队、长期愿望与共同目标。' },
+      { name: '第十二宫 · 内在', short: '内在', focus: '观察潜意识、休息、隐秘压力、结束与精神疗愈。' },
+    ],
+  },
+};
 type TarotCard = {
   id: number;
   name: string;
@@ -121,12 +207,6 @@ const majorHealth = [
 ];
 
 type DrawnCard = TarotCard & { reversed: boolean };
-const positions = ['过往', '当下', '趋势'];
-const positionFocus = [
-  '它照见这件事的根源、已经形成的惯性，以及你从过去带到现在的经验。',
-  '它描述此刻最需要被看见的核心，也提示你当前真正拥有的选择。',
-  '它不是固定预言，而是依照现有方向最可能形成的趋势与提醒。',
-];
 
 function orientationNote(card: DrawnCard) {
   return card.reversed
@@ -134,11 +214,9 @@ function orientationNote(card: DrawnCard) {
     : `这张牌以正位出现，核心力量正在较顺畅地表达。关键词是“${card.upright}”。它不保证事情自动成功，但说明你可以主动使用这份能量来推动局面。`;
 }
 
-function positionMeaning(card: DrawnCard, index: number) {
+function positionMeaning(card: DrawnCard, position: SpreadPosition) {
   const meaning = card.reversed ? card.reversedMeaning : card.uprightMeaning;
-  if (index === 0) return `在过往位置，${card.name}说明“${meaning}”曾构成事件的背景、旧模式或已经积累的经验；它帮助你理解事情为何走到今天。`;
-  if (index === 1) return `在当下位置，${card.name}把“${meaning}”放到最核心的位置；这既是当前局面的写照，也是现在最能改变走向的着力点。`;
-  return `在趋势位置，${card.name}表示若维持当前选择，较可能发展出“${meaning}”的方向；它描述可调整的趋势，而不是注定发生的结果。`;
+  return `在“${position.name}”位置，${position.focus}${card.name}进一步说明“${meaning}”。请把位置职责与牌义同时考虑，而不是脱离牌阵单独判断。`;
 }
 
 function domainMeaning(card: DrawnCard, domain: Domain) {
@@ -165,7 +243,7 @@ function guideFor(card: DrawnCard): CardGuide {
   };
 }
 
-function synthesisText(drawn: DrawnCard[]) {
+function synthesisText(drawn: DrawnCard[], spread: Spread) {
   if (drawn.length === 1) {
     const card = drawn[0];
     return `${card.name}把焦点放在“${card.reversed ? card.reversed : card.upright}”上。此刻最重要的不是追问一个绝对结果，而是辨认你能改变的部分，并用一次具体行动验证牌面给出的提醒。`;
@@ -173,12 +251,17 @@ function synthesisText(drawn: DrawnCard[]) {
 
   const reversedCount = drawn.filter((card) => card.reversed).length;
   const energy = reversedCount === 0
-    ? '三张牌均为正位，整体能量较为外显，适合把理解转化为行动。'
-    : reversedCount === 3
-      ? '三张牌均为逆位，说明主要课题更偏向内在整理；放慢、校准与解除旧模式，比勉强推进更重要。'
+    ? '本次牌阵均为正位，整体能量较外显，适合把理解转化为行动。'
+    : reversedCount === drawn.length
+      ? '本次牌阵均为逆位，主要课题偏向内在整理；放慢、校准与解除旧模式，比勉强推进更重要。'
       : `本次有 ${reversedCount} 张逆位牌，显示局面既有可用的推动力，也有需要先梳理的阻力。`;
 
-  return `从${drawn[0].name}到${drawn[1].name}，再走向${drawn[2].name}，牌面呈现的是一条“看见根源—回应当下—调整趋势”的路径。${energy}趋势牌描述的是沿着当前方式继续前进的可能性，而不是无法改变的结局。`;
+  if (spread === 'three') return `从${drawn[0].name}到${drawn[1].name}，再走向${drawn[2].name}，牌面呈现一条“看见根源—回应当下—调整趋势”的路径。${energy}`;
+  if (spread === 'relationship') return `你的位置是${drawn[0].name}，对方的位置是${drawn[1].name}，关系基础由${drawn[2].name}说明；真正需要结合观察的是隐藏议题${drawn[4].name}与关系需要${drawn[5].name}。${energy}`;
+  if (spread === 'choice') return `牌阵以${drawn[0].name}界定决策核心。选择A由${drawn[1].name}、${drawn[2].name}与${drawn[3].name}组成；选择B由${drawn[4].name}、${drawn[5].name}与${drawn[6].name}组成。比较时请同时衡量优势、代价和趋势，而不是只挑看起来更好的结果牌。${energy}`;
+  if (spread === 'career') return `职业现状由${drawn[0].name}呈现，优势${drawn[1].name}与机会${drawn[3].name}是可用资源，阻碍${drawn[2].name}和环境${drawn[4].name}说明现实限制；行动牌${drawn[5].name}是改变趋势的关键。${energy}`;
+  if (spread === 'celtic') return `凯尔特十字以${drawn[0].name}描述现状，以${drawn[1].name}指出交叉挑战；潜意识根源${drawn[3].name}、外部环境${drawn[7].name}与希望恐惧${drawn[8].name}共同解释为何局面复杂，最终趋势${drawn[9].name}应作为整组牌的综合结果理解。${energy}`;
+  return `年度主题由${drawn[0].name}统领，其余十二张牌分别落入十二个生活宫位。大阿卡纳出现于某一宫位时，通常表示该领域是年度重要课题；逆位较多的宫位更需要整理、修正或放慢。${energy}`;
 }
 
 export default function Home() {
@@ -186,9 +269,10 @@ export default function Home() {
   const [question, setQuestion] = useState('');
   const [drawn, setDrawn] = useState<DrawnCard[]>([]);
   const [isShuffling, setIsShuffling] = useState(false);
+  const spreadInfo = spreadDefinitions[spread];
 
   const subtitle = useMemo(
-    () => (spread === 'single' ? '为此刻抽取一张指引牌' : '以过往、当下、趋势展开三张牌'),
+    () => spreadDefinitions[spread].description,
     [spread],
   );
 
@@ -197,7 +281,7 @@ export default function Home() {
     setDrawn([]);
     window.setTimeout(() => {
       const shuffled = [...cards].sort(() => Math.random() - 0.5);
-      const count = spread === 'single' ? 1 : 3;
+      const count = spreadDefinitions[spread].positions.length;
       setDrawn(shuffled.slice(0, count).map((card) => ({ ...card, reversed: Math.random() < 0.28 })));
       setIsShuffling(false);
     }, 650);
@@ -215,7 +299,7 @@ export default function Home() {
         <a href="#top" className="brand" aria-label="星契塔罗首页">
           <span className="brand-mark">✦</span><span>星契</span><span className="brand-en">TAROT</span>
         </a>
-        <span className="header-note"><MoonStar aria-hidden="true" /> 完整 78 张 · 韦特体系</span>
+        <span className="header-note"><MoonStar aria-hidden="true" /> 78 张完整牌组 · 7 种牌阵</span>
       </header>
 
       <section id="top" className="reading-shell">
@@ -223,15 +307,14 @@ export default function Home() {
           <p className="eyebrow"><span /> A QUIET MOMENT FOR YOU</p>
           <h1>让牌面映见<br />你心中的答案</h1>
           <p className="intro-copy">完整收录22张大阿卡纳与56张小阿卡纳，依据韦特体系的经典象征与正逆位牌义，照亮你已经感受到、却还没说出口的事。</p>
-          <p className="deck-badge"><span>78</span> 张完整牌组 · 大阿卡纳 · 权杖 · 圣杯 · 宝剑 · 星币</p>
+          <p className="deck-badge"><span>78</span> 张完整牌组 · 7 种牌阵 · 正逆位深度解读</p>
 
-          <div className="spread-switch" aria-label="选择牌阵">
-            <button className={spread === 'single' ? 'active' : ''} onClick={() => { setSpread('single'); setDrawn([]); }}>
-              单牌指引 <small>一张牌</small>
-            </button>
-            <button className={spread === 'three' ? 'active' : ''} onClick={() => { setSpread('three'); setDrawn([]); }}>
-              三牌展开 <small>过往 · 当下 · 趋势</small>
-            </button>
+          <div className="spread-switch spread-catalog" aria-label="选择牌阵">
+            {(Object.entries(spreadDefinitions) as [Spread, SpreadDefinition][]).map(([key, definition]) => (
+              <button key={key} className={spread === key ? 'active' : ''} onClick={() => { setSpread(key); setDrawn([]); }}>
+                <span>{definition.name}</span><small>{definition.countLabel} · {definition.description}</small>
+              </button>
+            ))}
           </div>
 
           <label className="question-label" htmlFor="question"><span>你想询问什么？</span><span>可选</span></label>
@@ -253,10 +336,12 @@ export default function Home() {
           <p className="table-kicker">{drawn.length ? 'YOUR READING' : 'THE CARDS ARE WAITING'}</p>
           <h2>{drawn.length ? '牌面已为你展开' : subtitle}</h2>
 
-          <div className={`card-stage ${spread === 'three' ? 'three-card' : ''} ${isShuffling ? 'shuffling' : ''}`}>
-            {(drawn.length ? drawn : Array.from({ length: spread === 'single' ? 1 : 3 })).map((item, index) => {
+          <div className={`card-stage ${spreadInfo.positions.length === 3 ? 'three-card' : ''} ${spreadInfo.positions.length > 3 ? 'large-spread' : ''} ${isShuffling ? 'shuffling' : ''}`}>
+            {(drawn.length ? drawn : Array.from({ length: spreadInfo.positions.length })).map((item, index) => {
               const card = item as DrawnCard | undefined;
               return (
+                <div className="position-card" key={card?.id ?? `back-${index}`}>
+                <span className="stage-position"><b>{String(index + 1).padStart(2, '0')}</b>{spreadInfo.positions[index].short}</span>
                 <article className={`tarot-card ${card ? 'revealed' : ''}`} key={card?.id ?? `back-${index}`} style={{ animationDelay: `${index * 150}ms` }}>
                   {card ? (
                     <div className={`card-face ${card.reversed ? 'is-reversed' : ''}`}>
@@ -270,6 +355,7 @@ export default function Home() {
                     </div>
                   )}
                 </article>
+                </div>
               );
             })}
           </div>
@@ -278,13 +364,13 @@ export default function Home() {
             <div className="interpretations">
               <section className="reading-overview">
                 <span className="overview-label">本次牌阵总览</span>
-                <h3>{drawn.map((card) => card.name).join(' · ')}</h3>
-                <p>{synthesisText(drawn)}</p>
-                {spread === 'three' && (
-                  <div className="overview-path">
-                    <span><b>01</b> 看清反复出现的旧模式</span>
-                    <span><b>02</b> 找到此刻可做的选择</span>
-                    <span><b>03</b> 用行动调整未来趋势</span>
+                <h3>{spreadInfo.name} · {drawn.length} 张</h3>
+                <p>{synthesisText(drawn, spread)}</p>
+                {spreadInfo.positions.length > 1 && (
+                  <div className={`overview-path ${spreadInfo.positions.length > 3 ? 'many' : ''}`}>
+                    {spreadInfo.positions.map((position, index) => (
+                      <span key={position.name}><b>{String(index + 1).padStart(2, '0')} · {position.short}</b>{drawn[index].name}{drawn[index].reversed ? '（逆位）' : '（正位）'}</span>
+                    ))}
                   </div>
                 )}
               </section>
@@ -292,12 +378,15 @@ export default function Home() {
               {drawn.map((card, index) => {
                 const guide = guideFor(card);
                 return (
-                <article className="interpretation detailed-reading" key={`reading-${card.id}`}>
+                <details className="interpretation detailed-reading" key={`reading-${card.id}`} open={drawn.length <= 3}>
+                  <summary className="reading-summary">
                   <div className="interpretation-heading">
-                    <span>{spread === 'three' ? positions[index] : '此刻的指引'}</span>
+                    <span>{String(index + 1).padStart(2, '0')} · {spreadInfo.positions[index].name}</span>
                     <strong>{card.name} · {card.reversed ? '逆位' : '正位'} <small>{card.arcana === 'minor' ? `${card.suitLabel}／${card.element}` : '大阿卡纳'}</small></strong>
                   </div>
                   <p className="keywords">{card.reversed ? card.reversed : card.upright}</p>
+                  <span className="summary-hint">展开详细释义</span>
+                  </summary>
 
                   <section className="core-reading">
                     <span className="detail-index">01</span>
@@ -318,10 +407,8 @@ export default function Home() {
                       <h4>{question ? '与你问题的关联' : '放回你的处境中'}</h4>
                       <p>
                         {question
-                          ? `针对“${question}”，${spread === 'three' ? positionMeaning(card, index) : `这张牌以“${card.reversed ? card.reversedMeaning : card.uprightMeaning}”回应你的问题；请把它与现实证据一同判断。`}`
-                          : spread === 'three'
-                            ? positionMeaning(card, index)
-                            : '把这张牌放回你此刻最在意的事情中：哪些细节与你的现实产生共鸣，哪些部分让你不舒服？最有反应的地方，往往正是最值得探索的线索。'}
+                          ? `针对“${question}”，${positionMeaning(card, spreadInfo.positions[index])}`
+                          : positionMeaning(card, spreadInfo.positions[index])}
                       </p>
                     </div>
                   </section>
@@ -345,7 +432,7 @@ export default function Home() {
                       <p>“{guide.reflect}”</p>
                     </div>
                   </section>
-                </article>
+                </details>
               );
               })}
 
