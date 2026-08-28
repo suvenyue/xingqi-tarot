@@ -336,7 +336,7 @@ export default function Home() {
           <p className="table-kicker">{drawn.length ? 'YOUR READING' : 'THE CARDS ARE WAITING'}</p>
           <h2>{drawn.length ? '牌面已为你展开' : subtitle}</h2>
 
-          <div className={`card-stage ${spreadInfo.positions.length === 3 ? 'three-card' : ''} ${spreadInfo.positions.length > 3 ? 'large-spread' : ''} ${isShuffling ? 'shuffling' : ''}`}>
+          <div className={`card-stage spread-${spread} ${spreadInfo.positions.length === 3 ? 'three-card' : ''} ${spreadInfo.positions.length > 3 ? 'large-spread' : ''} ${isShuffling ? 'shuffling' : ''}`}>
             {(drawn.length ? drawn : Array.from({ length: spreadInfo.positions.length })).map((item, index) => {
               const card = item as DrawnCard | undefined;
               return (

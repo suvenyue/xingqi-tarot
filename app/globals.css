@@ -100,6 +100,118 @@ h1 { margin: 24px 0 22px; font: 400 clamp(42px,5vw,72px)/1.13 var(--font-serif);
 .large-spread .back-orbit::before { transform: translateY(-38px); }
 .large-spread .back-orbit::after { transform: translateY(38px); }
 .large-spread .back-label { bottom: 15px; font-size: 4px; }
+
+/* 每一种牌阵都有自己的空间语法：十字、镜像、分叉、路径与十二宫。 */
+.spread-celtic,
+.spread-relationship,
+.spread-choice,
+.spread-career { width: 100%; margin: 0 auto; align-items: center; }
+.spread-celtic .position-card,
+.spread-relationship .position-card,
+.spread-choice .position-card,
+.spread-career .position-card { position: relative; z-index: 2; width: 86px; align-self: center; justify-self: center; }
+
+.spread-celtic {
+  grid-template-columns: 1fr 1.08fr 1fr .38fr 1fr;
+  grid-template-rows: repeat(4, 154px);
+  min-height: 640px;
+  gap: 8px;
+}
+.spread-celtic::before,
+.spread-celtic::after { content: ''; position: absolute; left: 30%; top: 18%; z-index: 0; background: rgba(213,174,104,.14); }
+.spread-celtic::before { width: 1px; height: 52%; }
+.spread-celtic::after { width: 43%; height: 1px; left: 8.5%; top: 42%; }
+.spread-celtic .position-card:nth-child(1) { grid-area: 2 / 2; z-index: 2; }
+.spread-celtic .position-card:nth-child(2) { grid-area: 2 / 2; z-index: 4; transform: translateY(16px); pointer-events: none; }
+.spread-celtic .position-card:nth-child(2) .tarot-card { transform: rotate(90deg); }
+.spread-celtic .position-card:nth-child(2) .stage-position { position: absolute; right: -18px; bottom: -41px; width: 90px; }
+.spread-celtic .position-card:nth-child(3) { grid-area: 1 / 2; }
+.spread-celtic .position-card:nth-child(4) { grid-area: 3 / 2; }
+.spread-celtic .position-card:nth-child(5) { grid-area: 2 / 1; }
+.spread-celtic .position-card:nth-child(6) { grid-area: 2 / 3; }
+.spread-celtic .position-card:nth-child(7) { grid-area: 4 / 5; }
+.spread-celtic .position-card:nth-child(8) { grid-area: 3 / 5; }
+.spread-celtic .position-card:nth-child(9) { grid-area: 2 / 5; }
+.spread-celtic .position-card:nth-child(10) { grid-area: 1 / 5; }
+
+.spread-relationship {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(4, 146px);
+  min-height: 600px;
+  gap: 6px 24px;
+}
+.spread-relationship::before { content: '♡'; position: absolute; inset: 50% auto auto 50%; transform: translate(-50%,-50%); color: rgba(213,174,104,.08); font: 260px/1 var(--font-serif); }
+.spread-relationship .position-card:nth-child(1) { grid-area: 1 / 1; }
+.spread-relationship .position-card:nth-child(2) { grid-area: 1 / 3; }
+.spread-relationship .position-card:nth-child(3) { grid-area: 1 / 2; }
+.spread-relationship .position-card:nth-child(4) { grid-area: 2 / 2; }
+.spread-relationship .position-card:nth-child(5) { grid-area: 3 / 1; }
+.spread-relationship .position-card:nth-child(6) { grid-area: 3 / 3; }
+.spread-relationship .position-card:nth-child(7) { grid-area: 4 / 2; }
+
+.spread-choice {
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(4, 146px);
+  min-height: 600px;
+  gap: 6px;
+}
+.spread-choice::before,
+.spread-choice::after { content: ''; position: absolute; top: 25%; width: 46%; height: 1px; background: rgba(213,174,104,.14); transform-origin: top center; }
+.spread-choice::before { left: 3%; transform: rotate(-55deg); }
+.spread-choice::after { right: 3%; transform: rotate(55deg); }
+.spread-choice .position-card:nth-child(1) { grid-area: 1 / 3; }
+.spread-choice .position-card:nth-child(2) { grid-area: 2 / 2; }
+.spread-choice .position-card:nth-child(3) { grid-area: 3 / 1; }
+.spread-choice .position-card:nth-child(4) { grid-area: 4 / 1; }
+.spread-choice .position-card:nth-child(5) { grid-area: 2 / 4; }
+.spread-choice .position-card:nth-child(6) { grid-area: 3 / 5; }
+.spread-choice .position-card:nth-child(7) { grid-area: 4 / 5; }
+
+.spread-career {
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(3, 154px);
+  min-height: 490px;
+  gap: 8px 2px;
+}
+.spread-career::before { content: ''; position: absolute; left: 8%; right: 7%; top: 52%; height: 1px; background: linear-gradient(90deg,transparent,rgba(213,174,104,.22),transparent); transform: rotate(-17deg); }
+.spread-career .position-card:nth-child(1) { grid-area: 3 / 1; }
+.spread-career .position-card:nth-child(2) { grid-area: 1 / 1; }
+.spread-career .position-card:nth-child(3) { grid-area: 2 / 3; }
+.spread-career .position-card:nth-child(4) { grid-area: 1 / 4; }
+.spread-career .position-card:nth-child(5) { grid-area: 3 / 4; }
+.spread-career .position-card:nth-child(6) { grid-area: 2 / 6; }
+.spread-career .position-card:nth-child(7) { grid-area: 1 / 7; }
+
+.spread-year {
+  display: block;
+  width: min(100%, 650px);
+  min-height: 650px;
+  margin: 0 auto;
+  padding: 0;
+  border: 1px solid rgba(213,174,104,.11);
+  border-radius: 50%;
+}
+.spread-year::before,
+.spread-year::after { content: ''; position: absolute; inset: 11%; border: 1px solid rgba(213,174,104,.09); border-radius: 50%; pointer-events: none; }
+.spread-year::after { inset: 50% 6% auto; height: 1px; border: 0; border-top: 1px solid rgba(213,174,104,.09); border-radius: 0; }
+.spread-year .position-card { position: absolute; left: 50%; top: 50%; z-index: 2; width: 80px; transform: translate(-50%,-50%); }
+.spread-year .position-card:first-child { z-index: 3; width: 102px; }
+.spread-year .position-card:nth-child(2) { left: 9%; top: 50%; }
+.spread-year .position-card:nth-child(3) { left: 16%; top: 68%; }
+.spread-year .position-card:nth-child(4) { left: 30%; top: 80%; }
+.spread-year .position-card:nth-child(5) { left: 50%; top: 86%; }
+.spread-year .position-card:nth-child(6) { left: 70%; top: 80%; }
+.spread-year .position-card:nth-child(7) { left: 84%; top: 68%; }
+.spread-year .position-card:nth-child(8) { left: 91%; top: 50%; }
+.spread-year .position-card:nth-child(9) { left: 84%; top: 32%; }
+.spread-year .position-card:nth-child(10) { left: 70%; top: 20%; }
+.spread-year .position-card:nth-child(11) { left: 50%; top: 14%; }
+.spread-year .position-card:nth-child(12) { left: 30%; top: 20%; }
+.spread-year .position-card:nth-child(13) { left: 16%; top: 32%; }
+.spread-year .tarot-card { max-width: 80px; }
+.spread-year .position-card:first-child .tarot-card { max-width: 102px; }
+.spread-year .stage-position { min-height: 20px; font-size: 6px; letter-spacing: .04em; }
+.spread-year .stage-position b { margin-bottom: 1px; font-size: 6px; }
 .card-back, .card-face { position: relative; width: 100%; height: 100%; overflow: hidden; border: 1px solid #b48b4e; border-radius: inherit; background: #241637; box-shadow: 0 18px 38px rgba(0,0,0,.32); }
 .card-back { display: flex; flex-direction: column; align-items: center; justify-content: center; background: repeating-linear-gradient(45deg,rgba(213,174,104,.025) 0 1px,transparent 1px 8px), #241637; }
 .card-back::before { content: ''; position: absolute; inset: 8px; border: 1px solid rgba(213,174,104,.55); border-radius: 7px; }
@@ -192,6 +304,51 @@ footer span { letter-spacing: .2em; } footer p { margin: 0; font-family: var(--f
   .large-spread { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px 6px; }
   .large-spread .tarot-card { max-width: 94px; }
   .large-spread .card-glyph { font-size: 24px; }
+  .spread-celtic .position-card,
+  .spread-relationship .position-card,
+  .spread-choice .position-card,
+  .spread-career .position-card { width: 68px; }
+  .spread-celtic { grid-template-columns: repeat(3,1fr) .82fr; grid-template-rows: repeat(4,132px); min-height: 550px; gap: 6px 1px; }
+  .spread-celtic::before { left: 37.5%; top: 18%; height: 52%; }
+  .spread-celtic::after { left: 5%; top: 42%; width: 65%; }
+  .spread-celtic .position-card:nth-child(1), .spread-celtic .position-card:nth-child(2) { grid-column: 2; }
+  .spread-celtic .position-card:nth-child(3) { grid-area: 1 / 2; }
+  .spread-celtic .position-card:nth-child(4) { grid-area: 3 / 2; }
+  .spread-celtic .position-card:nth-child(5) { grid-area: 2 / 1; }
+  .spread-celtic .position-card:nth-child(6) { grid-area: 2 / 3; }
+  .spread-celtic .position-card:nth-child(7) { grid-area: 4 / 4; }
+  .spread-celtic .position-card:nth-child(8) { grid-area: 3 / 4; }
+  .spread-celtic .position-card:nth-child(9) { grid-area: 2 / 4; }
+  .spread-celtic .position-card:nth-child(10) { grid-area: 1 / 4; }
+  .spread-celtic .position-card:nth-child(2) .stage-position { right: -7px; bottom: -35px; width: 72px; }
+  .spread-relationship { grid-template-rows: repeat(4,132px); min-height: 545px; gap: 6px 2px; }
+  .spread-choice { grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(4,132px); min-height: 545px; gap: 6px 2px; }
+  .spread-choice .position-card:nth-child(1) { grid-area: 1 / 2; }
+  .spread-choice .position-card:nth-child(2) { grid-area: 2 / 1; }
+  .spread-choice .position-card:nth-child(3) { grid-area: 3 / 1; }
+  .spread-choice .position-card:nth-child(4) { grid-area: 4 / 1; }
+  .spread-choice .position-card:nth-child(5) { grid-area: 2 / 3; }
+  .spread-choice .position-card:nth-child(6) { grid-area: 3 / 3; }
+  .spread-choice .position-card:nth-child(7) { grid-area: 4 / 3; }
+  .spread-career { grid-template-columns: repeat(4,1fr); grid-template-rows: repeat(4,132px); min-height: 545px; gap: 6px 1px; }
+  .spread-career .position-card:nth-child(1) { grid-area: 4 / 1; }
+  .spread-career .position-card:nth-child(2) { grid-area: 3 / 1; }
+  .spread-career .position-card:nth-child(3) { grid-area: 3 / 2; }
+  .spread-career .position-card:nth-child(4) { grid-area: 2 / 2; }
+  .spread-career .position-card:nth-child(5) { grid-area: 4 / 2; }
+  .spread-career .position-card:nth-child(6) { grid-area: 2 / 3; }
+  .spread-career .position-card:nth-child(7) { grid-area: 1 / 4; }
+  .spread-year { width: min(100%,390px); min-height: 410px; }
+  .spread-year .position-card { width: 54px; }
+  .spread-year .position-card:first-child { width: 76px; }
+  .spread-year .tarot-card { max-width: 54px; }
+  .spread-year .position-card:first-child .tarot-card { max-width: 76px; }
+  .spread-year .card-face { padding: 8px 5px 7px; }
+  .spread-year .card-arch { margin-top: 7px; }
+  .spread-year .card-glyph { font-size: 17px; }
+  .spread-year .card-title strong { font-size: 7px; }
+  .spread-year .stage-position { min-height: 17px; font-size: 5px; }
+  .spread-year .stage-position b { font-size: 5px; }
   .reading-summary { padding-right: 0; }
   .summary-hint { position: static; display: block; margin-top: 7px; text-align: right; }
   .reading-overview { padding: 19px; } .overview-path { grid-template-columns: 1fr; }
