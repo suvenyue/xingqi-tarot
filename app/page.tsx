@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { MoonStar, RotateCcw, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { ArrowLeftRight, ChevronRight, MoonStar, RotateCcw, Shuffle, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -268,7 +268,11 @@ export default function Home() {
   const [spread, setSpread] = useState<Spread>('single');
   const [question, setQuestion] = useState('');
   const [drawn, setDrawn] = useState<DrawnCard[]>([]);
+  const [selectionDeck, setSelectionDeck] = useState<DrawnCard[]>([]);
+  const [selectedCards, setSelectedCards] = useState<DrawnCard[]>([]);
+  const [isSelecting, setIsSelecting] = useState(false);
   const [isShuffling, setIsShuffling] = useState(false);
+  const fanRef = useRef<HTMLDivElement>(null);
   const spreadInfo = spreadDefinitions[spread];
 
   const subtitle = useMemo(
@@ -276,20 +280,65 @@ export default function Home() {
     [spread],
   );
 
+  useEffect(() => {
+    if (!isSelecting || !fanRef.current) return;
+    const fan = fanRef.current;
+    fan.scrollLeft = Math.max(0, (fan.scrollWidth - fan.clientWidth) / 2);
+  }, [isSelecting, selectionDeck]);
+
+  function shuffledDeck() {
+    const deck = cards.map((card) => ({ ...card, reversed: Math.random() < 0.28 }));
+    for (let index = deck.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [deck[index], deck[swapIndex]] = [deck[swapIndex], deck[index]];
+    }
+    return deck;
+  }
+
   function drawCards() {
     setIsShuffling(true);
     setDrawn([]);
+    setSelectedCards([]);
     window.setTimeout(() => {
-      const shuffled = [...cards].sort(() => Math.random() - 0.5);
-      const count = spreadDefinitions[spread].positions.length;
-      setDrawn(shuffled.slice(0, count).map((card) => ({ ...card, reversed: Math.random() < 0.28 })));
+      setSelectionDeck(shuffledDeck());
+      setIsSelecting(true);
       setIsShuffling(false);
     }, 650);
+  }
+
+  function selectCard(card: DrawnCard) {
+    const targetCount = spreadDefinitions[spread].positions.length;
+    setSelectedCards((current) => {
+      if (current.length >= targetCount || current.some((selected) => selected.id === card.id)) return current;
+      return [...current, card];
+    });
+  }
+
+  function reshuffleSelection() {
+    setSelectedCards([]);
+    setSelectionDeck(shuffledDeck());
+  }
+
+  function cancelSelection() {
+    setIsSelecting(false);
+    setSelectionDeck([]);
+    setSelectedCards([]);
+  }
+
+  function revealSelection() {
+    if (selectedCards.length !== spreadInfo.positions.length) return;
+    setDrawn(selectedCards);
+    setIsSelecting(false);
+    setSelectionDeck([]);
+    setSelectedCards([]);
   }
 
   function reset() {
     setDrawn([]);
     setQuestion('');
+    setSelectionDeck([]);
+    setSelectedCards([]);
+    setIsSelecting(false);
   }
 
   return (
@@ -302,7 +351,87 @@ export default function Home() {
         <span className="header-note"><MoonStar aria-hidden="true" /> 78 张完整牌组 · 7 种牌阵</span>
       </header>
 
-      <section id="top" className="reading-shell">
+      <section id="top" className={`reading-shell ${isSelecting ? 'selecting-mode' : ''}`}>
+        {isSelecting ? (
+          <div className="selection-ritual">
+            <div className="selection-heading">
+              <div>
+                <p className="eyebrow"><span /> DRAWING RITUAL</p>
+                <h1>选择此刻吸引你的牌</h1>
+                <p>没有所谓正确答案。让视线缓慢掠过牌背，跟随第一份安静而直接的感觉。</p>
+              </div>
+              <div className="selection-controls">
+                <span className="selection-count" aria-live="polite">已选 <b>{selectedCards.length}</b> ／ {spreadInfo.positions.length}</span>
+                <button type="button" onClick={cancelSelection}><RotateCcw aria-hidden="true" /> 调整设置</button>
+                <button type="button" onClick={reshuffleSelection}><Shuffle aria-hidden="true" /> 重新洗牌</button>
+              </div>
+            </div>
+
+            <div className="selection-meta">
+              <span>{spreadInfo.positions.length} 张 · 完整 78 张 · 按选择顺序进入牌阵</span>
+              <span><ArrowLeftRight aria-hidden="true" /> 左右滑动或拖动，查看更多牌</span>
+            </div>
+
+            <div className="fan-window" ref={fanRef}>
+              <div className="fan-track" role="group" aria-label="78张塔罗牌背">
+                {selectionDeck.map((card, index) => {
+                  const selectedIndex = selectedCards.findIndex((selected) => selected.id === card.id);
+                  const center = (selectionDeck.length - 1) / 2;
+                  const style = {
+                    '--fan-angle': `${(index - center) * .42}deg`,
+                    '--fan-drop': `${Math.abs(index - center) * .55}px`,
+                    '--fan-delay': `${Math.min(index * 12, 480)}ms`,
+                  } as CSSProperties;
+                  return (
+                    <button
+                      type="button"
+                      key={`choose-${card.id}`}
+                      className={`picker-card ${selectedIndex >= 0 ? 'selected' : ''}`}
+                      style={style}
+                      onClick={() => selectCard(card)}
+                      disabled={selectedIndex >= 0 || selectedCards.length >= spreadInfo.positions.length}
+                      aria-label={selectedIndex >= 0 ? `已选择为第${selectedIndex + 1}张牌` : `选择牌背 ${index + 1}`}
+                    >
+                      <span className="picker-card-inner">
+                        <span className="picker-sun">☀</span>
+                        <span className="picker-seal">✦</span>
+                        <span className="picker-moon">☾</span>
+                      </span>
+                      {selectedIndex >= 0 && <span className="picked-order">第 {selectedIndex + 1} 张</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="selection-tray-heading">
+              <div><span>你已选择的牌</span><small>牌面会依次落入「{spreadInfo.name}」的对应位置</small></div>
+              <Button onClick={revealSelection} disabled={selectedCards.length !== spreadInfo.positions.length} className="reveal-button">
+                展开牌阵与详细解读 <ChevronRight aria-hidden="true" />
+              </Button>
+            </div>
+            <div className="selected-tray">
+              {spreadInfo.positions.map((position, index) => {
+                const card = selectedCards[index];
+                return (
+                  <div className={`selected-slot ${card ? 'filled' : ''}`} key={`selected-slot-${position.name}`}>
+                    {card ? (
+                      <>
+                        <div className={`picked-card-face ${card.reversed ? 'is-reversed' : ''}`}>
+                          <span>{card.glyph}</span><strong>{card.name}</strong><small>{card.en}</small>
+                        </div>
+                        <p>{position.short} · {card.reversed ? '逆位' : '正位'}</p>
+                      </>
+                    ) : (
+                      <div className="empty-picked-card"><span>{String(index + 1).padStart(2, '0')}</span><small>{position.short}</small></div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+        <>
         <div className="intro-panel">
           <p className="eyebrow"><span /> A QUIET MOMENT FOR YOU</p>
           <h1>让牌面映见<br />你心中的答案</h1>
@@ -445,6 +574,8 @@ export default function Home() {
             <div className="empty-guidance"><span>✦</span><p>没有标准答案，只有值得被你听见的提醒。</p></div>
           )}
         </div>
+        </>
+        )}
       </section>
 
       <footer><span>星契 TAROT</span><p>把牌当作一面镜子，把选择留在自己手中。</p></footer>
