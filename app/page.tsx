@@ -11,6 +11,16 @@ type Spread = 'single' | 'three' | 'celtic' | 'relationship' | 'choice' | 'caree
 type SpreadPosition = { name: string; short: string; focus: string };
 type SpreadDefinition = { name: string; countLabel: string; description: string; positions: SpreadPosition[] };
 
+const twinkleStars = Array.from({ length: 38 }, (_, index) => ({
+  left: `${(index * 37 + 9) % 100}%`,
+  top: `${(index * 53 + 6) % 100}%`,
+  '--twinkle-size': `${1.2 + (index % 5) * .46}px`,
+  '--twinkle-delay': `${-(index % 13) * .62}s`,
+  '--twinkle-duration': `${3.4 + (index % 7) * .68}s`,
+  '--twinkle-drift': `${4 + (index % 4) * 2}px`,
+  '--twinkle-rise': `${-3 - (index % 5)}px`,
+} as CSSProperties));
+
 const spreadDefinitions: Record<Spread, SpreadDefinition> = {
   single: {
     name: '单牌指引', countLabel: '1张', description: '为此刻抽取一张核心指引牌',
@@ -413,6 +423,7 @@ export default function Home() {
   const [notice, setNotice] = useState('');
   const [isSharedReading, setIsSharedReading] = useState(false);
   const fanRef = useRef<HTMLDivElement>(null);
+  const trailRef = useRef<HTMLCanvasElement>(null);
   const spreadInfo = spreadDefinitions[spread];
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
 
@@ -460,6 +471,95 @@ export default function Home() {
     const fan = fanRef.current;
     fan.scrollLeft = Math.max(0, (fan.scrollWidth - fan.clientWidth) / 2);
   }, [isSelecting, selectionDeck]);
+
+  useEffect(() => {
+    const canvas = trailRef.current;
+    if (!canvas || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    type TrailParticle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; hue: number };
+    let particles: TrailParticle[] = [];
+    let animationFrame = 0;
+    let lastX = -100;
+    let lastY = -100;
+
+    const resize = () => {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(window.innerWidth * ratio);
+      canvas.height = Math.round(window.innerHeight * ratio);
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
+
+    const addTrail = (event: PointerEvent) => {
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      const distance = Math.hypot(event.clientX - lastX, event.clientY - lastY);
+      const count = Math.min(3, Math.max(1, Math.ceil(distance / 16)));
+      for (let index = 0; index < count; index += 1) {
+        const progress = count === 1 ? 1 : index / (count - 1);
+        const life = 28 + secureRandomIndex(18);
+        particles.push({
+          x: lastX < 0 ? event.clientX : lastX + (event.clientX - lastX) * progress,
+          y: lastY < 0 ? event.clientY : lastY + (event.clientY - lastY) * progress,
+          vx: (secureRandomIndex(100) - 50) / 220,
+          vy: -.12 - secureRandomIndex(35) / 180,
+          life,
+          maxLife: life,
+          size: 1.2 + secureRandomIndex(20) / 10,
+          hue: secureRandomIndex(5) === 0 ? 267 : 42 + secureRandomIndex(10),
+        });
+      }
+      particles = particles.slice(-82);
+      lastX = event.clientX;
+      lastY = event.clientY;
+    };
+
+    const paint = () => {
+      context.save();
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.restore();
+      context.globalCompositeOperation = 'lighter';
+      particles.forEach((particle) => {
+        const opacity = Math.max(0, particle.life / particle.maxLife);
+        const radius = particle.size * (.45 + opacity * .55);
+        context.beginPath();
+        context.arc(particle.x, particle.y, radius, 0, Math.PI * 2);
+        context.fillStyle = `hsla(${particle.hue}, 78%, 76%, ${opacity * .68})`;
+        context.shadowColor = `hsla(${particle.hue}, 86%, 72%, ${opacity})`;
+        context.shadowBlur = 9 * opacity;
+        context.fill();
+        if (particle.size > 2.35 && opacity > .42) {
+          context.beginPath();
+          context.moveTo(particle.x - radius * 2.2, particle.y);
+          context.lineTo(particle.x + radius * 2.2, particle.y);
+          context.moveTo(particle.x, particle.y - radius * 2.2);
+          context.lineTo(particle.x, particle.y + radius * 2.2);
+          context.strokeStyle = `hsla(${particle.hue}, 90%, 86%, ${opacity * .38})`;
+          context.lineWidth = .55;
+          context.stroke();
+        }
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        particle.vy += .004;
+        particle.life -= 1;
+      });
+      particles = particles.filter((particle) => particle.life > 0);
+      context.shadowBlur = 0;
+      context.globalCompositeOperation = 'source-over';
+      animationFrame = window.requestAnimationFrame(paint);
+    };
+
+    resize();
+    paint();
+    window.addEventListener('resize', resize);
+    window.addEventListener('pointermove', addTrail, { passive: true });
+    return () => {
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('pointermove', addTrail);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, []);
 
   function showNotice(message: string) {
     setNotice(message);
@@ -661,7 +761,10 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-hidden">
-      <div className="stars" aria-hidden="true" />
+      <canvas ref={trailRef} className="cursor-trail" aria-hidden="true" />
+      <div className="stars" aria-hidden="true">
+        {twinkleStars.map((style, index) => <span className={`twinkle-star ${index % 7 === 0 ? 'star-cross' : ''}`} style={style} key={`star-${index}`} />)}
+      </div>
       <header className="site-header">
         <a href="#top" className="brand" aria-label="星契塔罗首页" onClick={() => setView('reading')}>
           <span className="brand-mark">✦</span><span>星契</span><span className="brand-en">TAROT</span>
