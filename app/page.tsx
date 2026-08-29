@@ -20,6 +20,16 @@ const moonJourney = [
   { label: '解读', phase: 'full' },
 ] as const;
 
+const spreadScenes: Record<Spread, { symbol: string; title: string; note: string }> = {
+  single: { symbol: '☾', title: '月光之门', note: '一束月光，只照亮此刻最重要的答案' },
+  three: { symbol: '⋯', title: '时间之流', note: '过往、当下与趋势沿同一条星轨展开' },
+  celtic: { symbol: '✣', title: '十字圣域', note: '交叉力量与命运之轮共同揭示全貌' },
+  relationship: { symbol: '♡', title: '双星共振', note: '两颗独立的心，在关系核心处相遇' },
+  choice: { symbol: '⋔', title: '命运岔路', note: '两条道路分别显露机会、代价与走向' },
+  career: { symbol: '⌁', title: '星阶之路', note: '沿能力、阻碍与机会逐层走向下一站' },
+  year: { symbol: '◎', title: '年度星轮', note: '十二个生活宫位环绕年度核心缓慢展开' },
+};
+
 const ritualCopy: Record<Exclude<RitualStage, 'idle'>, { eyebrow: string; title: string; note: string }> = {
   gathering: { eyebrow: 'GATHERING INTENTION', title: '星光正在回应你的问题', note: '让呼吸慢下来，把注意力放回此刻。' },
   shuffling: { eyebrow: 'SHUFFLING THE DECK', title: '七十八张牌正在重新排列', note: '正位与逆位分别独立随机，牌序由安全随机源生成。' },
@@ -439,13 +449,21 @@ export default function Home() {
   const [isSharedReading, setIsSharedReading] = useState(false);
   const [ritualStage, setRitualStage] = useState<RitualStage>('idle');
   const [revealBurst, setRevealBurst] = useState(false);
+  const [isCentering, setIsCentering] = useState(false);
+  const [isHoldingMoon, setIsHoldingMoon] = useState(false);
+  const [holdProgress, setHoldProgress] = useState(0);
   const fanRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<HTMLCanvasElement>(null);
   const ritualTimersRef = useRef<number[]>([]);
   const burstTimerRef = useRef<number | null>(null);
+  const holdFrameRef = useRef<number | null>(null);
+  const holdStartRef = useRef(0);
+  const holdCompletedRef = useRef(false);
   const spreadInfo = spreadDefinitions[spread];
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
-  const journeyStep = drawn.length
+  const journeyStep = isCentering
+    ? 0
+    : drawn.length
     ? 4
     : isSelecting
       ? 3
@@ -826,7 +844,22 @@ export default function Home() {
     setRitualStage('idle');
   }
 
-  function drawCards() {
+  function cancelMoonHold() {
+    if (holdCompletedRef.current) return;
+    if (holdFrameRef.current) window.cancelAnimationFrame(holdFrameRef.current);
+    holdFrameRef.current = null;
+    holdStartRef.current = 0;
+    setIsHoldingMoon(false);
+    setHoldProgress(0);
+  }
+
+  function startRitual() {
+    if (holdFrameRef.current) window.cancelAnimationFrame(holdFrameRef.current);
+    holdFrameRef.current = null;
+    holdStartRef.current = 0;
+    setIsCentering(false);
+    setIsHoldingMoon(false);
+    setHoldProgress(0);
     clearRitualTimers();
     setIsShuffling(true);
     setRitualStage('gathering');
@@ -839,6 +872,38 @@ export default function Home() {
       window.setTimeout(() => setRitualStage('opening'), 1850),
       window.setTimeout(completeRitual, 2850),
     ];
+  }
+
+  function drawCards() {
+    holdCompletedRef.current = false;
+    setHoldProgress(0);
+    setIsHoldingMoon(false);
+    setIsCentering(true);
+  }
+
+  function beginMoonHold() {
+    if (holdStartRef.current || holdCompletedRef.current) return;
+    holdStartRef.current = performance.now();
+    setIsHoldingMoon(true);
+    const tick = (now: number) => {
+      const progress = Math.min(100, ((now - holdStartRef.current) / 1800) * 100);
+      setHoldProgress(progress);
+      if (progress >= 100) {
+        holdCompletedRef.current = true;
+        holdStartRef.current = 0;
+        holdFrameRef.current = null;
+        setIsHoldingMoon(false);
+        startRitual();
+        return;
+      }
+      holdFrameRef.current = window.requestAnimationFrame(tick);
+    };
+    holdFrameRef.current = window.requestAnimationFrame(tick);
+  }
+
+  function closeCentering() {
+    cancelMoonHold();
+    setIsCentering(false);
   }
 
   function selectCard(card: DrawnCard) {
@@ -884,11 +949,14 @@ export default function Home() {
     setRitualStage('idle');
     setIsShuffling(false);
     setRevealBurst(false);
+    setIsCentering(false);
+    cancelMoonHold();
   }
 
   useEffect(() => () => {
     clearRitualTimers();
     if (burstTimerRef.current) window.clearTimeout(burstTimerRef.current);
+    if (holdFrameRef.current) window.cancelAnimationFrame(holdFrameRef.current);
   }, []);
 
   return (
@@ -924,6 +992,37 @@ export default function Home() {
       {notice && <div className="site-notice" role="status">{notice}</div>}
       {view === 'reading' && (
       <section id="top" className={`reading-shell ${isSelecting ? 'selecting-mode' : ''}`}>
+        {isCentering && (
+          <div className={`centering-overlay ${isHoldingMoon ? 'is-holding' : ''}`} role="dialog" aria-modal="true" aria-labelledby="centering-title">
+            <div className="centering-stars" aria-hidden="true">{Array.from({ length: 12 }, (_, index) => <i style={{ '--center-star': index } as CSSProperties} key={`center-star-${index}`} />)}</div>
+            <div className="centering-content">
+              <p className="centering-eyebrow">A MOMENT OF STILLNESS</p>
+              <h2 id="centering-title">闭上眼睛，默念你的问题</h2>
+              <p>不必寻找所谓正确的感觉。让呼吸慢下来，当你准备好时，按住中央的月亮。</p>
+              <button
+                type="button"
+                className="hold-moon"
+                style={{ '--hold-progress': `${holdProgress}%` } as CSSProperties}
+                onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); beginMoonHold(); }}
+                onPointerUp={cancelMoonHold}
+                onPointerCancel={cancelMoonHold}
+                onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) { event.preventDefault(); beginMoonHold(); } }}
+                onKeyUp={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); cancelMoonHold(); } }}
+                onClick={(event) => event.preventDefault()}
+                aria-describedby="hold-instruction"
+              >
+                <span className="hold-moon-disc">☾</span>
+                <span className="hold-moon-ring" aria-hidden="true" />
+                <small>{isHoldingMoon ? `${Math.ceil(holdProgress)}%` : '按住月亮'}</small>
+              </button>
+              <p id="hold-instruction" className="hold-instruction">持续约两秒 · 松开可重新开始</p>
+              <div className="centering-actions">
+                <button type="button" onClick={startRitual}>跳过静心，直接洗牌</button>
+                <button type="button" onClick={closeCentering}>返回调整问题</button>
+              </div>
+            </div>
+          </div>
+        )}
         {ritualStage !== 'idle' && (
           <div className={`draw-ritual-overlay stage-${ritualStage}`} role="dialog" aria-modal="true" aria-live="polite" aria-label="洗牌仪式进行中">
             <div className="ritual-vignette" />
@@ -1061,6 +1160,11 @@ export default function Home() {
           <p className="table-kicker">{drawn.length ? 'YOUR READING' : 'THE CARDS ARE WAITING'}</p>
           <h2>{drawn.length ? '牌面已为你展开' : subtitle}</h2>
 
+          <div className="spread-scene-caption" aria-live="polite">
+            <span aria-hidden="true">{spreadScenes[spread].symbol}</span>
+            <div><b>{spreadScenes[spread].title}</b><small>{spreadScenes[spread].note}</small></div>
+          </div>
+
           <div className={`card-stage spread-${spread} ${spreadInfo.positions.length === 3 ? 'three-card' : ''} ${spreadInfo.positions.length > 3 ? 'large-spread' : ''} ${isShuffling ? 'shuffling' : ''}`}>
             {(drawn.length ? drawn : Array.from({ length: spreadInfo.positions.length })).map((item, index) => {
               const card = item as DrawnCard | undefined;
@@ -1081,6 +1185,10 @@ export default function Home() {
                 </div>
               );
             })}
+            <div className={`spread-atmosphere scene-${spread}`} aria-hidden="true">
+              <span className="scene-core">{spreadScenes[spread].symbol}</span>
+              {Array.from({ length: 6 }, (_, index) => <i key={`scene-${spread}-${index}`} />)}
+            </div>
           </div>
 
           {drawn.length > 0 ? (
