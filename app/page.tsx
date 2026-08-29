@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MoonStar, RotateCcw, Save, Shuffle, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -258,7 +258,25 @@ type SavedReading = {
   cards: { id: number; reversed: boolean }[];
 };
 
+type ChatStyle = 'gentle' | 'analytical' | 'intuitive' | 'direct';
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+};
+type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
+
 const HISTORY_KEY = 'xingqi-tarot-readings-v1';
+const AI_CHAT_KEY = 'xingqi-tarot-ai-chats-v1';
+const AI_USAGE_KEY = 'xingqi-tarot-ai-usage-v1';
+const DAILY_CHAT_LIMIT = 8;
+const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string }> = {
+  gentle: { name: '温柔陪伴', note: '先接住感受，再慢慢梳理', symbol: '☾' },
+  analytical: { name: '理性解析', note: '按牌位与证据清晰拆解', symbol: '◇' },
+  intuitive: { name: '直觉灵感', note: '强调意象、共鸣与内在声音', symbol: '✦' },
+  direct: { name: '直言提醒', note: '坦率指出矛盾、盲点和代价', symbol: '↗' },
+};
 
 function cardImagePath(card: TarotCard) {
   if (card.arcana !== 'minor') return `/cards/major-${String(card.id).padStart(2, '0')}.webp`;
@@ -458,8 +476,15 @@ export default function Home() {
   const [isCentering, setIsCentering] = useState(false);
   const [isHoldingMoon, setIsHoldingMoon] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
+  const [chatStyle, setChatStyle] = useState<ChatStyle>('gentle');
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatError, setChatError] = useState('');
+  const [isChatStreaming, setIsChatStreaming] = useState(false);
+  const [chatRemaining, setChatRemaining] = useState(DAILY_CHAT_LIMIT);
   const fanRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<HTMLCanvasElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
   const ritualTimersRef = useRef<number[]>([]);
   const burstTimerRef = useRef<number | null>(null);
   const holdFrameRef = useRef<number | null>(null);
@@ -469,6 +494,9 @@ export default function Home() {
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
   const fullSynthesis = drawn.length ? synthesisText(drawn, spread) : '';
   const oneSentenceSummary = fullSynthesis ? `${fullSynthesis.split('。')[0]}。` : '';
+  const readingChatKey = drawn.length
+    ? `${spread}|${question.trim()}|${drawn.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-')}`
+    : '';
   const journeyStep = isCentering
     ? 0
     : drawn.length
@@ -519,6 +547,40 @@ export default function Home() {
     setIsSharedReading(true);
     setView('reading');
   }, []);
+
+  useEffect(() => {
+    try {
+      const usage = JSON.parse(localStorage.getItem(AI_USAGE_KEY) || '{}') as { date?: string; count?: number };
+      const used = usage.date === todayKey() && Number.isFinite(usage.count) ? Number(usage.count) : 0;
+      setChatRemaining(Math.max(0, DAILY_CHAT_LIMIT - used));
+    } catch {
+      setChatRemaining(DAILY_CHAT_LIMIT);
+    }
+  }, []);
+
+  useEffect(() => {
+    setChatError('');
+    setChatInput('');
+    if (!readingChatKey) {
+      setChatMessages([]);
+      setChatStyle('gentle');
+      return;
+    }
+    try {
+      const chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string, SavedChat>;
+      const saved = chats[readingChatKey];
+      setChatMessages(Array.isArray(saved?.messages) ? saved.messages.slice(-30) : []);
+      setChatStyle(saved?.style && saved.style in chatStyles ? saved.style : 'gentle');
+    } catch {
+      setChatMessages([]);
+      setChatStyle('gentle');
+    }
+  }, [readingChatKey]);
+
+  useEffect(() => {
+    if (!chatMessages.length) return;
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [chatMessages, isChatStreaming]);
 
   useEffect(() => {
     if (!isSelecting || !fanRef.current) return;
@@ -693,6 +755,140 @@ export default function Home() {
   function showNotice(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2400);
+  }
+
+  function todayKey() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  function saveChat(messages: ChatMessage[], style = chatStyle) {
+    if (!readingChatKey) return;
+    try {
+      const chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string, SavedChat>;
+      chats[readingChatKey] = { style, messages: messages.slice(-30), updatedAt: Date.now() };
+      const trimmed = Object.fromEntries(
+        Object.entries(chats)
+          .sort(([, first], [, second]) => second.updatedAt - first.updatedAt)
+          .slice(0, 8),
+      );
+      localStorage.setItem(AI_CHAT_KEY, JSON.stringify(trimmed));
+    } catch {
+      // Private browsing or a full storage quota should not block the live chat.
+    }
+  }
+
+  function chooseChatStyle(style: ChatStyle) {
+    setChatStyle(style);
+    saveChat(chatMessages, style);
+  }
+
+  function clearChat() {
+    setChatMessages([]);
+    setChatInput('');
+    setChatError('');
+    if (!readingChatKey) return;
+    try {
+      const chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string, SavedChat>;
+      delete chats[readingChatKey];
+      localStorage.setItem(AI_CHAT_KEY, JSON.stringify(chats));
+    } catch {
+      // The visible conversation is still cleared even if storage is unavailable.
+    }
+    showNotice('本次 AI 对话已从这台设备清除');
+  }
+
+  function consumeLocalChatQuota() {
+    let used = 0;
+    try {
+      const saved = JSON.parse(localStorage.getItem(AI_USAGE_KEY) || '{}') as { date?: string; count?: number };
+      used = saved.date === todayKey() && Number.isFinite(saved.count) ? Number(saved.count) : 0;
+      used += 1;
+      localStorage.setItem(AI_USAGE_KEY, JSON.stringify({ date: todayKey(), count: used }));
+    } catch {
+      used = DAILY_CHAT_LIMIT - chatRemaining + 1;
+    }
+    setChatRemaining(Math.max(0, DAILY_CHAT_LIMIT - used));
+  }
+
+  async function sendChat(prefilled?: string) {
+    const message = (prefilled ?? chatInput).trim();
+    if (!message || isChatStreaming || !drawn.length) return;
+    if (chatRemaining <= 0) {
+      setChatError('今天的 8 次 AI 对话已经用完，明天会自动恢复。');
+      return;
+    }
+
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: message, createdAt: Date.now() };
+    const assistantId = crypto.randomUUID();
+    const baseMessages = [...chatMessages, userMessage];
+    setChatMessages([...baseMessages, { id: assistantId, role: 'assistant', content: '', createdAt: Date.now() }]);
+    setChatInput('');
+    setChatError('');
+    setIsChatStreaming(true);
+
+    try {
+      const response = await fetch('/api/tarot-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          style: chatStyle,
+          history: chatMessages.slice(-8).map(({ role, content }) => ({ role, content })),
+          context: {
+            question,
+            spread: { name: spreadInfo.name, positions: spreadInfo.positions.map((position) => position.name) },
+            cards: drawn.map((card, index) => ({
+              name: card.name,
+              orientation: card.reversed ? '逆位' : '正位',
+              position: spreadInfo.positions[index].name,
+              keywords: card.reversed ? card.reversed : card.upright,
+              focus: spreadInfo.positions[index].focus,
+            })),
+            synthesis: fullSynthesis,
+            energy: structure
+              ? `大阿卡纳 ${structure.majorCount}/${drawn.length}；正位 ${drawn.length - structure.reversedCount}，逆位 ${structure.reversedCount}；主导元素 ${structure.dominantLabel}；主线：${structure.mainline}`
+              : '',
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || 'AI 暂时没有回应，请稍后再试。');
+      }
+
+      consumeLocalChatQuota();
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('当前浏览器无法读取流式回复。');
+      const decoder = new TextDecoder();
+      let assistantText = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        assistantText += decoder.decode(value, { stream: true });
+        setChatMessages([
+          ...baseMessages,
+          { id: assistantId, role: 'assistant', content: assistantText, createdAt: Date.now() },
+        ]);
+      }
+
+      assistantText += decoder.decode();
+      if (!assistantText.trim()) throw new Error('AI 没有返回可读取的内容，请重试。');
+      const completed = [
+        ...baseMessages,
+        { id: assistantId, role: 'assistant' as const, content: assistantText, createdAt: Date.now() },
+      ];
+      setChatMessages(completed);
+      saveChat(completed);
+    } catch (error) {
+      setChatMessages(baseMessages);
+      setChatError(error instanceof Error ? error.message : 'AI 对话暂时不可用，请稍后再试。');
+      saveChat(baseMessages);
+    } finally {
+      setIsChatStreaming(false);
+    }
   }
 
   function tiltCard(event: ReactPointerEvent<HTMLElement>) {
@@ -1365,6 +1561,91 @@ export default function Home() {
                   </div>
                 </details>
               </>}
+
+              <section className="ai-tarot-chat" aria-labelledby="ai-chat-title">
+                <div className="ai-chat-heading">
+                  <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
+                  <div>
+                    <span>AI TAROT DIALOGUE</span>
+                    <h3 id="ai-chat-title">继续追问这一次牌阵</h3>
+                    <p>AI 已读取你的问题、牌阵位置、每张牌与正逆位，可以沿着当前解读继续深入。</p>
+                  </div>
+                  <div className="ai-chat-quota"><b>{chatRemaining}</b><span>今日剩余</span></div>
+                </div>
+
+                <div className="ai-context-ribbon">
+                  <span>已连接当前牌阵</span>
+                  <strong>{spreadInfo.name}</strong>
+                  <small>{drawn.map((card) => `${card.name}${card.reversed ? '·逆' : ''}`).join(' · ')}</small>
+                </div>
+
+                <div className="ai-style-picker" aria-label="选择AI对话风格">
+                  {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key, item]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={chatStyle === key ? 'active' : ''}
+                      onClick={() => chooseChatStyle(key)}
+                      aria-pressed={chatStyle === key}
+                    >
+                      <i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className={`ai-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
+                  {chatMessages.length ? chatMessages.map((message) => (
+                    <article className={`ai-message ${message.role}`} key={message.id}>
+                      <span className="ai-message-label">{message.role === 'assistant' ? chatStyles[chatStyle].name : '你'}</span>
+                      <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
+                    </article>
+                  )) : (
+                    <div className="ai-chat-welcome">
+                      <span>✦</span>
+                      <p>你可以问得很具体。AI 会结合牌位与整组关系回答，而不是只重复单张牌义。</p>
+                    </div>
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {!chatMessages.length && (
+                  <div className="ai-prompt-chips" aria-label="推荐追问">
+                    {['这组牌最需要我面对什么？','牌与牌之间最大的矛盾是什么？','请给我三条可以执行的建议'].map((prompt) => (
+                      <button type="button" key={prompt} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}>{prompt}</button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="ai-chat-composer">
+                  <Textarea
+                    value={chatInput}
+                    onChange={(event) => setChatInput(event.target.value.slice(0, 1000))}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        void sendChat();
+                      }
+                    }}
+                    placeholder="继续问牌阵，例如：这张逆位牌在提醒我改变什么？"
+                    aria-label="向AI追问当前牌阵"
+                    disabled={isChatStreaming || chatRemaining <= 0}
+                  />
+                  <button
+                    className="ai-send-button"
+                    type="button"
+                    onClick={() => void sendChat()}
+                    disabled={!chatInput.trim() || isChatStreaming || chatRemaining <= 0}
+                    aria-label="发送问题"
+                  >
+                    <Send aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="ai-chat-footer">
+                  <p>{chatError || '对话保存在这台设备；每天最多 8 次，次日自动恢复。AI 解读仅用于自我探索。'}</p>
+                  {chatMessages.length > 0 && <button type="button" onClick={clearChat} disabled={isChatStreaming}><Trash2 aria-hidden="true" />清除对话</button>}
+                </div>
+              </section>
 
               <section className="reading-action-dock">
                 <div><span>保存与分享本次解读</span><small>内容只在你主动操作时保存或生成</small></div>
