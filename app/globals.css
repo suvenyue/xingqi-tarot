@@ -573,6 +573,121 @@ body::before {
   opacity: .9;
   mix-blend-mode: screen;
 }
+.constellation-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: .86;
+  mix-blend-mode: screen;
+}
+
+.moon-journey {
+  position: relative;
+  z-index: 4;
+  width: min(680px,calc(100% - 40px));
+  margin: 24px auto -14px;
+  padding: 10px 18px 9px;
+  border: 1px solid rgba(228,198,129,.12);
+  border-radius: 999px;
+  background: rgba(8,9,22,.58);
+  box-shadow: 0 15px 42px rgba(0,0,0,.18),inset 0 1px rgba(255,255,255,.025);
+  backdrop-filter: blur(16px);
+}
+.moon-journey ol { display: grid; grid-template-columns: repeat(5,1fr); margin: 0; padding: 0; list-style: none; }
+.moon-journey li { position: relative; display: grid; justify-items: center; gap: 5px; color: #696779; }
+.moon-journey li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: calc(50% + 14px);
+  right: calc(-50% + 14px);
+  top: 9px;
+  height: 1px;
+  background: linear-gradient(90deg,rgba(228,198,129,.22),rgba(122,108,156,.08));
+}
+.moon-journey li.complete:not(:last-child)::after { background: linear-gradient(90deg,rgba(228,198,129,.64),rgba(228,198,129,.2)); }
+.moon-journey small { font-size: 8px; font-weight: 700; letter-spacing: .16em; }
+.moon-journey li.current small { color: #efdaa8; }
+.moon-journey li.complete small { color: #a99473; }
+.phase-moon {
+  position: relative;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(228,198,129,.32);
+  border-radius: 50%;
+  background: #25243b;
+  box-shadow: 0 0 0 4px rgba(228,198,129,.018);
+}
+.phase-moon::after { content: ''; position: absolute; inset: 0; border-radius: 50%; background: #e7cd91; transform: translateX(100%); }
+.phase-crescent::after { transform: translateX(54%); }
+.phase-half::after { transform: translateX(0); clip-path: inset(0 0 0 50%); }
+.phase-gibbous::after { transform: translateX(0); clip-path: inset(0 0 0 16%); }
+.phase-full::after { transform: none; }
+.moon-journey li.current .phase-moon { border-color: rgba(247,222,160,.85); box-shadow: 0 0 13px rgba(228,198,129,.42),0 0 0 4px rgba(228,198,129,.05); }
+.moon-journey li.complete .phase-moon { filter: saturate(.75); }
+
+.draw-ritual-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: hidden;
+  background: rgba(4,4,13,.79);
+  backdrop-filter: blur(18px) saturate(90%);
+  animation: ritualFadeIn .48s ease both;
+}
+.ritual-vignette { position: absolute; inset: 0; background: radial-gradient(circle at center,rgba(86,79,153,.16),transparent 42%),radial-gradient(circle at center,transparent 25%,rgba(0,0,0,.5) 100%); }
+.ritual-sequence { position: relative; z-index: 2; width: min(560px,100%); text-align: center; }
+.ritual-sequence > p:first-child { margin: 0 0 13px; color: #d8ba76; font-size: 9px; font-weight: 700; letter-spacing: .36em; }
+.ritual-sequence h2 { margin: 23px 0 8px; color: #f7efdf; font: 400 clamp(27px,4vw,43px)/1.2 var(--font-serif); }
+.ritual-sequence-note { margin: 0; color: #9e98ac; font: 12px/1.8 var(--font-serif); }
+.ritual-cosmos { position: relative; width: 290px; height: 290px; margin: 0 auto; display: grid; place-items: center; }
+.ritual-ring { position: absolute; inset: 14px; border: 1px solid rgba(228,198,129,.28); border-radius: 50%; animation: ritualSpin 15s linear infinite; }
+.ritual-ring::before,.ritual-ring::after { content: '✦'; position: absolute; left: 50%; color: #e6ca86; font-size: 8px; }
+.ritual-ring::before { top: -5px; }.ritual-ring::after { bottom: -5px; transform: rotate(180deg); }
+.ritual-ring.ring-two { inset: 42px; border-style: dashed; border-color: rgba(179,151,234,.28); animation-direction: reverse; animation-duration: 11s; }
+.ritual-ring.ring-three { inset: 70px; border-color: rgba(228,198,129,.2); box-shadow: 0 0 42px rgba(156,122,216,.1); animation-duration: 8s; }
+.ritual-sigil { position: absolute; z-index: 2; display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid rgba(228,198,129,.22); border-radius: 50%; background: #0b0b1b; color: #b9a5d7; font-size: 10px; box-shadow: 0 0 16px rgba(151,121,213,.12); }
+.sigil-fire { left: 50%; top: 1px; transform: translateX(-50%); color: #e7a36f; }.sigil-water { left: 50%; bottom: 1px; transform: translateX(-50%); color: #80bfe3; }.sigil-air { left: 1px; top: 50%; transform: translateY(-50%); color: #d6d8ef; }.sigil-earth { right: 1px; top: 50%; transform: translateY(-50%); color: #d7bd6d; }
+.ritual-deck { position: relative; z-index: 4; width: 88px; height: 143px; perspective: 900px; }
+.ritual-deck i { position: absolute; inset: 0; border: 1px solid #c6a45f; border-radius: 8px; background: repeating-linear-gradient(45deg,rgba(228,198,129,.035) 0 1px,transparent 1px 8px),linear-gradient(145deg,#111b3a,#271731); box-shadow: 0 20px 40px rgba(0,0,0,.42); }
+.ritual-deck i:nth-child(1) { transform: translate(-7px,5px) rotate(-4deg); }.ritual-deck i:nth-child(2) { transform: translate(6px,3px) rotate(3deg); }.ritual-deck i:nth-child(3) { transform: translate(0,-2px); }
+.ritual-deck > span { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; color: #e4c681; font: 27px/1 var(--font-serif); }
+.ritual-deck > span::before { content: ''; position: absolute; width: 48px; height: 48px; border: 1px solid rgba(228,198,129,.52); transform: rotate(45deg); box-shadow: inset 0 0 0 6px rgba(9,15,34,.9); }
+.stage-gathering .ritual-cosmos { animation: ritualGather 1.2s ease-in-out infinite alternate; }
+.stage-shuffling .ritual-deck i:nth-child(1) { animation: ritualShuffleLeft .66s ease-in-out infinite; }
+.stage-shuffling .ritual-deck i:nth-child(2) { animation: ritualShuffleRight .66s ease-in-out .11s infinite; }
+.stage-opening .ritual-deck i:nth-child(1) { transform: translateX(-94px) rotate(-18deg); }.stage-opening .ritual-deck i:nth-child(2) { transform: translateX(94px) rotate(18deg); }.stage-opening .ritual-deck i { transition: transform .75s cubic-bezier(.2,.8,.2,1); }
+.ritual-progress { display: flex; justify-content: center; gap: 6px; margin: 19px 0 16px; }
+.ritual-progress span { width: 28px; height: 2px; border-radius: 999px; background: rgba(255,255,255,.08); transition: .35s ease; }
+.ritual-progress span.active { background: #dfbd72; box-shadow: 0 0 10px rgba(223,189,114,.38); }
+.ritual-sequence button { padding: 8px 12px; border: 0; background: transparent; color: #817b8f; font-size: 9px; letter-spacing: .08em; cursor: pointer; }
+.ritual-sequence button:hover { color: #dec58d; }
+
+.element-burst { position: absolute; inset: 0; z-index: 16; overflow: hidden; pointer-events: none; }
+.burst-particle {
+  --burst-angle: calc(var(--burst-index) * 53deg);
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 11px;
+  opacity: 0;
+  filter: drop-shadow(0 0 10px currentColor);
+  animation: elementBloom 1.85s cubic-bezier(.2,.76,.25,1) calc(var(--burst-index) * 80ms) both;
+}
+.burst-wands { color: #e7935f; }.burst-cups { color: #6cbbe5; }.burst-swords { color: #d5d9ee; }.burst-pentacles { color: #dabe65; }.burst-spirit { color: #bf8ce2; }
 
 .site-header {
   position: sticky;
@@ -765,6 +880,7 @@ footer { color: #747184; }
   .intro-panel { padding: 34px; }
   .table-panel { min-height: 620px; }
   .card-encyclopedia { top: auto; }
+  .moon-journey { margin-top: 18px; }
 }
 
 @media (max-width: 560px) {
@@ -789,6 +905,12 @@ footer { color: #747184; }
   .library-grid { gap: 9px; }
   .library-grid > button { border-radius: 11px; }
   .card-encyclopedia { border-radius: 18px; }
+  .moon-journey { width: calc(100% - 24px); margin: 16px auto -8px; padding: 8px 8px 7px; }
+  .moon-journey small { font-size: 7px; letter-spacing: .08em; }
+  .phase-moon { width: 16px; height: 16px; }
+  .ritual-cosmos { width: 245px; height: 245px; }
+  .ritual-deck { width: 74px; height: 121px; }
+  .draw-ritual-overlay { padding: 16px; }
 }
 
 @keyframes starTwinkle {
@@ -801,9 +923,19 @@ footer { color: #747184; }
   0% { opacity: .6; transform: translate3d(-2%,0,0) scale(.94); }
   100% { opacity: 1; transform: translate3d(9%,7%,0) scale(1.09); }
 }
+@keyframes ritualFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ritualSpin { to { transform: rotate(360deg); } }
+@keyframes ritualGather { from { transform: scale(.96); filter: brightness(.85); } to { transform: scale(1.025); filter: brightness(1.14); } }
+@keyframes ritualShuffleLeft { 0%,100% { transform: translate(-7px,5px) rotate(-4deg); } 50% { transform: translate(-61px,-4px) rotate(-16deg); } }
+@keyframes ritualShuffleRight { 0%,100% { transform: translate(6px,3px) rotate(3deg); } 50% { transform: translate(61px,3px) rotate(16deg); } }
+@keyframes elementBloom {
+  0% { opacity: 0; transform: translate(-50%,-50%) rotate(var(--burst-angle)) translateY(-25px) scale(.25); }
+  24% { opacity: .96; }
+  100% { opacity: 0; transform: translate(-50%,-50%) rotate(var(--burst-angle)) translateY(-330px) rotate(calc(var(--burst-angle) * -1)) scale(1.25); }
+}
 @media (hover: none),(pointer: coarse) { .cursor-trail { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .cursor-trail { display: none; }
+  .cursor-trail,.constellation-field { display: none; }
   .twinkle-star { animation: none !important; opacity: .38; }
   .stars::before,.stars::after { animation: none !important; }
 }

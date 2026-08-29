@@ -10,6 +10,21 @@ import { minorCards, minorDomainMeaning, type DeckCard, type Domain } from '@/li
 type Spread = 'single' | 'three' | 'celtic' | 'relationship' | 'choice' | 'career' | 'year';
 type SpreadPosition = { name: string; short: string; focus: string };
 type SpreadDefinition = { name: string; countLabel: string; description: string; positions: SpreadPosition[] };
+type RitualStage = 'idle' | 'gathering' | 'shuffling' | 'opening';
+
+const moonJourney = [
+  { label: '静心', phase: 'new' },
+  { label: '选阵', phase: 'crescent' },
+  { label: '洗牌', phase: 'half' },
+  { label: '选牌', phase: 'gibbous' },
+  { label: '解读', phase: 'full' },
+] as const;
+
+const ritualCopy: Record<Exclude<RitualStage, 'idle'>, { eyebrow: string; title: string; note: string }> = {
+  gathering: { eyebrow: 'GATHERING INTENTION', title: '星光正在回应你的问题', note: '让呼吸慢下来，把注意力放回此刻。' },
+  shuffling: { eyebrow: 'SHUFFLING THE DECK', title: '七十八张牌正在重新排列', note: '正位与逆位分别独立随机，牌序由安全随机源生成。' },
+  opening: { eyebrow: 'THE PATH IS OPENING', title: '牌阵之门已经打开', note: '接下来，请从完整牌组中亲手选出吸引你的牌。' },
+};
 
 const twinkleStars = Array.from({ length: 38 }, (_, index) => ({
   left: `${(index * 37 + 9) % 100}%`,
@@ -422,10 +437,24 @@ export default function Home() {
   const [libraryCardId, setLibraryCardId] = useState(0);
   const [notice, setNotice] = useState('');
   const [isSharedReading, setIsSharedReading] = useState(false);
+  const [ritualStage, setRitualStage] = useState<RitualStage>('idle');
+  const [revealBurst, setRevealBurst] = useState(false);
   const fanRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<HTMLCanvasElement>(null);
+  const constellationRef = useRef<HTMLCanvasElement>(null);
+  const ritualTimersRef = useRef<number[]>([]);
+  const burstTimerRef = useRef<number | null>(null);
   const spreadInfo = spreadDefinitions[spread];
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
+  const journeyStep = drawn.length
+    ? 4
+    : isSelecting
+      ? 3
+      : isShuffling || ritualStage !== 'idle'
+        ? 2
+        : question.trim() || spread !== 'single'
+          ? 1
+          : 0;
 
   const subtitle = useMemo(
     () => spreadDefinitions[spread].description,
@@ -471,6 +500,101 @@ export default function Home() {
     const fan = fanRef.current;
     fan.scrollLeft = Math.max(0, (fan.scrollWidth - fan.clientWidth) / 2);
   }, [isSelecting, selectionDeck]);
+
+  useEffect(() => {
+    const canvas = constellationRef.current;
+    if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    type ConstellationNode = { px: number; py: number; size: number; drift: number };
+    const nodes: ConstellationNode[] = Array.from({ length: 44 }, (_, index) => ({
+      px: ((index * 47 + 11) % 97) / 100,
+      py: ((index * 71 + 7) % 91) / 100,
+      size: .7 + (index % 5) * .28,
+      drift: index * .73,
+    }));
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let ratio = 1;
+    let animationFrame = 0;
+    let pointerX = -1000;
+    let pointerY = -1000;
+    let pointerActive = false;
+
+    const resize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
+    const followPointer = (event: PointerEvent) => {
+      if (event.pointerType && event.pointerType !== 'mouse') return;
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      pointerActive = true;
+    };
+    const leavePointer = () => { pointerActive = false; };
+
+    const paint = (time: number) => {
+      context.clearRect(0, 0, width, height);
+      const points = nodes.map((node) => ({
+        x: node.px * width + Math.sin(time / 6500 + node.drift) * 5,
+        y: node.py * height + Math.cos(time / 7800 + node.drift) * 4,
+        size: node.size,
+      }));
+
+      if (pointerActive) {
+        for (let first = 0; first < points.length; first += 1) {
+          const a = points[first];
+          const pointerDistanceA = Math.hypot(a.x - pointerX, a.y - pointerY);
+          if (pointerDistanceA > 230) continue;
+          for (let second = first + 1; second < points.length; second += 1) {
+            const b = points[second];
+            const pointerDistanceB = Math.hypot(b.x - pointerX, b.y - pointerY);
+            const nodeDistance = Math.hypot(a.x - b.x, a.y - b.y);
+            if (pointerDistanceB > 230 || nodeDistance > 145) continue;
+            const opacity = Math.min(1 - pointerDistanceA / 230, 1 - pointerDistanceB / 230) * (1 - nodeDistance / 170);
+            context.beginPath();
+            context.moveTo(a.x, a.y);
+            context.lineTo(b.x, b.y);
+            context.strokeStyle = `rgba(214,190,255,${Math.max(0, opacity) * .42})`;
+            context.lineWidth = .65;
+            context.stroke();
+          }
+        }
+      }
+
+      points.forEach((point) => {
+        const distance = Math.hypot(point.x - pointerX, point.y - pointerY);
+        const awake = pointerActive ? Math.max(0, 1 - distance / 205) : 0;
+        context.beginPath();
+        context.arc(point.x, point.y, point.size + awake * 1.15, 0, Math.PI * 2);
+        context.fillStyle = `rgba(244,221,170,${.12 + awake * .7})`;
+        context.shadowColor = `rgba(193,157,255,${awake * .72})`;
+        context.shadowBlur = awake * 15;
+        context.fill();
+      });
+      context.shadowBlur = 0;
+      animationFrame = window.requestAnimationFrame(paint);
+    };
+
+    resize();
+    animationFrame = window.requestAnimationFrame(paint);
+    window.addEventListener('resize', resize);
+    window.addEventListener('pointermove', followPointer, { passive: true });
+    document.documentElement.addEventListener('mouseleave', leavePointer);
+    return () => {
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('pointermove', followPointer);
+      document.documentElement.removeEventListener('mouseleave', leavePointer);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = trailRef.current;
@@ -710,16 +834,32 @@ export default function Home() {
     return shuffledCards.map((card) => ({ ...card, reversed: secureRandomIndex(2) === 1 }));
   }
 
+  function clearRitualTimers() {
+    ritualTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    ritualTimersRef.current = [];
+  }
+
+  function completeRitual() {
+    clearRitualTimers();
+    setSelectionDeck(shuffledDeck());
+    setIsSelecting(true);
+    setIsShuffling(false);
+    setRitualStage('idle');
+  }
+
   function drawCards() {
+    clearRitualTimers();
     setIsShuffling(true);
+    setRitualStage('gathering');
     setDrawn([]);
     setSelectedCards([]);
     setIsSharedReading(false);
-    window.setTimeout(() => {
-      setSelectionDeck(shuffledDeck());
-      setIsSelecting(true);
-      setIsShuffling(false);
-    }, 650);
+    setRevealBurst(false);
+    ritualTimersRef.current = [
+      window.setTimeout(() => setRitualStage('shuffling'), 850),
+      window.setTimeout(() => setRitualStage('opening'), 1850),
+      window.setTimeout(completeRitual, 2850),
+    ];
   }
 
   function selectCard(card: DrawnCard) {
@@ -739,6 +879,8 @@ export default function Home() {
     setIsSelecting(false);
     setSelectionDeck([]);
     setSelectedCards([]);
+    setRitualStage('idle');
+    setIsShuffling(false);
   }
 
   function revealSelection() {
@@ -748,6 +890,9 @@ export default function Home() {
     setIsSelecting(false);
     setSelectionDeck([]);
     setSelectedCards([]);
+    setRevealBurst(true);
+    if (burstTimerRef.current) window.clearTimeout(burstTimerRef.current);
+    burstTimerRef.current = window.setTimeout(() => setRevealBurst(false), 2200);
   }
 
   function reset() {
@@ -757,10 +902,19 @@ export default function Home() {
     setSelectedCards([]);
     setIsSelecting(false);
     setIsSharedReading(false);
+    setRitualStage('idle');
+    setIsShuffling(false);
+    setRevealBurst(false);
   }
+
+  useEffect(() => () => {
+    clearRitualTimers();
+    if (burstTimerRef.current) window.clearTimeout(burstTimerRef.current);
+  }, []);
 
   return (
     <main className="min-h-screen overflow-hidden">
+      <canvas ref={constellationRef} className="constellation-field" aria-hidden="true" />
       <canvas ref={trailRef} className="cursor-trail" aria-hidden="true" />
       <div className="stars" aria-hidden="true">
         {twinkleStars.map((style, index) => <span className={`twinkle-star ${index % 7 === 0 ? 'star-cross' : ''}`} style={style} key={`star-${index}`} />)}
@@ -776,9 +930,39 @@ export default function Home() {
         </nav>
       </header>
 
+      {view === 'reading' && (
+        <nav className="moon-journey" aria-label="抽牌进度">
+          <ol>
+            {moonJourney.map((step, index) => (
+              <li className={`${index === journeyStep ? 'current' : ''} ${index < journeyStep ? 'complete' : ''}`} aria-current={index === journeyStep ? 'step' : undefined} key={step.label}>
+                <span className={`phase-moon phase-${step.phase}`} aria-hidden="true" />
+                <small>{step.label}</small>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
+
       {notice && <div className="site-notice" role="status">{notice}</div>}
       {view === 'reading' && (
       <section id="top" className={`reading-shell ${isSelecting ? 'selecting-mode' : ''}`}>
+        {ritualStage !== 'idle' && (
+          <div className={`draw-ritual-overlay stage-${ritualStage}`} role="dialog" aria-modal="true" aria-live="polite" aria-label="洗牌仪式进行中">
+            <div className="ritual-vignette" />
+            <div className="ritual-sequence">
+              <p>{ritualCopy[ritualStage].eyebrow}</p>
+              <div className="ritual-cosmos" aria-hidden="true">
+                <span className="ritual-ring ring-one" /><span className="ritual-ring ring-two" /><span className="ritual-ring ring-three" />
+                <span className="ritual-sigil sigil-fire">△</span><span className="ritual-sigil sigil-water">▽</span><span className="ritual-sigil sigil-air">✧</span><span className="ritual-sigil sigil-earth">⊕</span>
+                <div className="ritual-deck"><i /><i /><i /><span>☾</span></div>
+              </div>
+              <h2>{ritualCopy[ritualStage].title}</h2>
+              <p className="ritual-sequence-note">{ritualCopy[ritualStage].note}</p>
+              <div className="ritual-progress" aria-hidden="true"><span className="active" /><span className={ritualStage !== 'gathering' ? 'active' : ''} /><span className={ritualStage === 'opening' ? 'active' : ''} /></div>
+              <button type="button" onClick={completeRitual}>跳过动画，直接选牌</button>
+            </div>
+          </div>
+        )}
         {isSelecting ? (
           <div className="selection-ritual">
             <div className="selection-heading">
@@ -885,6 +1069,15 @@ export default function Home() {
         </div>
 
         <div className="table-panel" aria-live="polite">
+          {revealBurst && drawn.length > 0 && (
+            <div className="element-burst" aria-hidden="true">
+              {drawn.map((card, index) => {
+                const elementClass = card.arcana === 'minor' ? card.suit || 'spirit' : 'spirit';
+                const glyph = card.arcana === 'minor' ? ({ wands: '✦', cups: '◡', swords: '✧', pentacles: '⊕' }[card.suit || 'wands']) : '✺';
+                return <span className={`burst-particle burst-${elementClass}`} style={{ '--burst-index': index } as CSSProperties} key={`burst-${card.id}`}>{glyph}</span>;
+              })}
+            </div>
+          )}
           <img className="table-art" src="/og.png" alt="" aria-hidden="true" />
           <div className="moon-orbit" aria-hidden="true"><span>☾</span></div>
           <p className="table-kicker">{drawn.length ? 'YOUR READING' : 'THE CARDS ARE WAITING'}</p>
