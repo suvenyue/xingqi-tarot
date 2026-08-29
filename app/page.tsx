@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MoonStar, RotateCcw, Save, Shuffle, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -467,6 +467,8 @@ export default function Home() {
   const holdCompletedRef = useRef(false);
   const spreadInfo = spreadDefinitions[spread];
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
+  const fullSynthesis = drawn.length ? synthesisText(drawn, spread) : '';
+  const oneSentenceSummary = fullSynthesis ? `${fullSynthesis.split('。')[0]}。` : '';
   const journeyStep = isCentering
     ? 0
     : drawn.length
@@ -691,6 +693,24 @@ export default function Home() {
   function showNotice(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2400);
+  }
+
+  function tiltCard(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType && event.pointerType !== 'mouse') return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const horizontal = (event.clientX - rect.left) / rect.width;
+    const vertical = (event.clientY - rect.top) / rect.height;
+    event.currentTarget.style.setProperty('--tilt-x', `${(vertical - .5) * -7}deg`);
+    event.currentTarget.style.setProperty('--tilt-y', `${(horizontal - .5) * 8}deg`);
+    event.currentTarget.style.setProperty('--glare-x', `${horizontal * 100}%`);
+    event.currentTarget.style.setProperty('--glare-y', `${vertical * 100}%`);
+  }
+
+  function resetCardTilt(event: ReactPointerEvent<HTMLElement>) {
+    event.currentTarget.style.removeProperty('--tilt-x');
+    event.currentTarget.style.removeProperty('--tilt-y');
+    event.currentTarget.style.removeProperty('--glare-x');
+    event.currentTarget.style.removeProperty('--glare-y');
   }
 
   function makeReading(cardList: DrawnCard[], createdAt = Date.now()): SavedReading {
@@ -1180,7 +1200,13 @@ export default function Home() {
               return (
                 <div className="position-card" key={card?.id ?? `back-${index}`}>
                 <span className="stage-position"><b>{String(index + 1).padStart(2, '0')}</b>{spreadInfo.positions[index].short}</span>
-                <article className={`tarot-card ${card ? 'revealed' : ''}`} key={card?.id ?? `back-${index}`} style={{ animationDelay: `${index * 150}ms` }}>
+                <article
+                  className={`tarot-card ${card ? 'revealed' : ''}`}
+                  key={card?.id ?? `back-${index}`}
+                  style={{ animationDelay: `${index * 150}ms` }}
+                  onPointerMove={tiltCard}
+                  onPointerLeave={resetCardTilt}
+                >
                   {card ? (
                     <div className={`card-face ${card.reversed ? 'is-reversed' : ''}`}>
                       <img className="rws-card-image" src={cardImagePath(card)} alt={`${card.name}韦特牌面`} />
@@ -1203,40 +1229,40 @@ export default function Home() {
           {drawn.length > 0 ? (
             <div className="interpretations">
               {isSharedReading && <div className="shared-reading-banner"><Link2 aria-hidden="true" /><span><b>只读分享解读</b>你正在查看由分享链接还原的牌阵；它不会自动写入你的历史记录。</span></div>}
-              <section className="reading-overview">
-                <span className="overview-label">本次牌阵总览</span>
-                <h3>{spreadInfo.name} · {drawn.length} 张</h3>
-                <p>{synthesisText(drawn, spread)}</p>
-                {spreadInfo.positions.length > 1 && (
+              <details className="reading-layer layer-summary" open>
+                <summary>
+                  <span className="layer-number">01</span>
+                  <div><small>一句话总结</small><strong>{oneSentenceSummary}</strong></div>
+                  <ChevronRight aria-hidden="true" />
+                </summary>
+                <div className="layer-content summary-content">
+                  <p>{fullSynthesis}</p>
+                  {question && <blockquote>“{question}”</blockquote>}
+                </div>
+              </details>
+
+              <details className="reading-layer layer-panorama" open>
+                <summary>
+                  <span className="layer-number">02</span>
+                  <div><small>牌阵全景</small><strong>{spreadInfo.name} · {drawn.length} 张牌的位置</strong></div>
+                  <ChevronRight aria-hidden="true" />
+                </summary>
+                <div className="layer-content">
                   <div className={`overview-path ${spreadInfo.positions.length > 3 ? 'many' : ''}`}>
                     {spreadInfo.positions.map((position, index) => (
                       <span key={position.name}><b>{String(index + 1).padStart(2, '0')} · {position.short}</b>{drawn[index].name}{drawn[index].reversed ? '（逆位）' : '（正位）'}</span>
                     ))}
                   </div>
-                )}
-                <div className="reading-tools" aria-label="保存与分享">
-                  <button onClick={() => persistReading()}><Save aria-hidden="true" />保存本次解读</button>
-                  <button onClick={copyFullReading}><Copy aria-hidden="true" />复制完整文字</button>
-                  <button onClick={exportShareImage}><Download aria-hidden="true" />导出分享图</button>
-                  <button onClick={copyShareLink}><Link2 aria-hidden="true" />复制只读链接</button>
                 </div>
-              </section>
+              </details>
 
-              {structure && <section className="structure-reading">
-                <div className="structure-heading"><span>跨牌综合分析</span><h3>牌与牌之间如何共同说话</h3></div>
-                <div className="structure-stats">
-                  <div><span>大阿卡纳比例</span><b>{structure.majorCount}／{drawn.length}</b><small>{structure.majorCount > drawn.length / 2 ? '重大人生课题主导' : '日常选择与现实事件主导'}</small></div>
-                  <div><span>正逆位结构</span><b>{drawn.length - structure.reversedCount} 正 · {structure.reversedCount} 逆</b><small>{structure.reversedCount > drawn.length / 2 ? '先整理阻力再推进' : '可用行动能量较多'}</small></div>
-                  <div><span>主导元素</span><b>{structure.dominantLabel}</b><small>权杖{structure.suits.wands} · 圣杯{structure.suits.cups} · 宝剑{structure.suits.swords} · 星币{structure.suits.pentacles}</small></div>
-                  <div><span>数字与宫廷牌</span><b>{structure.repeats.length ? structure.repeats.join(' · ') : '无重复数字'}</b><small>宫廷牌 {structure.courts} 张</small></div>
-                </div>
-                <div className="structure-narrative">
-                  <section><span>牌阵主线</span><p>{structure.mainline}</p></section>
-                  <section><span>转折与相邻关系</span><ol>{structure.adjacency.map((note,index) => <li key={`${index}-${note}`}>{note}</li>)}</ol></section>
-                  <section className="structure-advice"><span>最终整合建议</span><p>{structure.advice}</p></section>
-                </div>
-              </section>}
-
+              <details className="reading-layer layer-cards" open={drawn.length <= 3}>
+                <summary>
+                  <span className="layer-number">03</span>
+                  <div><small>逐张牌义</small><strong>逐一查看每张牌的完整标准解读</strong></div>
+                  <ChevronRight aria-hidden="true" />
+                </summary>
+                <div className="layer-content card-readings">
               {drawn.map((card, index) => {
                 const guide = guideFor(card);
                 return (
@@ -1297,6 +1323,58 @@ export default function Home() {
                 </details>
               );
               })}
+                </div>
+              </details>
+
+              {structure && <>
+                <details className="reading-layer layer-relationships">
+                  <summary>
+                    <span className="layer-number">04</span>
+                    <div><small>牌与牌之间的关系</small><strong>相邻牌如何互相加强、转折或产生冲突</strong></div>
+                    <ChevronRight aria-hidden="true" />
+                  </summary>
+                  <div className="layer-content relationship-content">
+                    {structure.adjacency.length ? <ol>{structure.adjacency.map((note,index) => <li key={`${index}-${note}`}>{note}</li>)}</ol> : <p>单牌牌阵没有相邻牌关系，这张牌本身就是本次解读的唯一核心。</p>}
+                  </div>
+                </details>
+
+                <details className="reading-layer layer-energy">
+                  <summary>
+                    <span className="layer-number">05</span>
+                    <div><small>能量与比例</small><strong>元素、正逆位与大阿卡纳结构</strong></div>
+                    <ChevronRight aria-hidden="true" />
+                  </summary>
+                  <div className="layer-content structure-stats">
+                    <div><span>大阿卡纳比例</span><b>{structure.majorCount}／{drawn.length}</b><small>{structure.majorCount > drawn.length / 2 ? '重大人生课题主导' : '日常选择与现实事件主导'}</small></div>
+                    <div><span>正逆位结构</span><b>{drawn.length - structure.reversedCount} 正 · {structure.reversedCount} 逆</b><small>{structure.reversedCount > drawn.length / 2 ? '先整理阻力再推进' : '可用行动能量较多'}</small></div>
+                    <div><span>主导元素</span><b>{structure.dominantLabel}</b><small>权杖{structure.suits.wands} · 圣杯{structure.suits.cups} · 宝剑{structure.suits.swords} · 星币{structure.suits.pentacles}</small></div>
+                    <div><span>数字与宫廷牌</span><b>{structure.repeats.length ? structure.repeats.join(' · ') : '无重复数字'}</b><small>宫廷牌 {structure.courts} 张</small></div>
+                  </div>
+                </details>
+
+                <details className="reading-layer layer-guidance" open>
+                  <summary>
+                    <span className="layer-number">06</span>
+                    <div><small>主线与行动建议</small><strong>整合转折点，形成可以带回现实的方向</strong></div>
+                    <ChevronRight aria-hidden="true" />
+                  </summary>
+                  <div className="layer-content structure-narrative">
+                    <section><span>牌阵主线</span><p>{structure.mainline}</p></section>
+                    <section><span>关键转折</span><p>{structure.adjacency.length ? structure.adjacency[Math.floor(structure.adjacency.length / 2)] : oneSentenceSummary}</p></section>
+                    <section className="structure-advice"><span>最终整合建议</span><p>{structure.advice}</p></section>
+                  </div>
+                </details>
+              </>}
+
+              <section className="reading-action-dock">
+                <div><span>保存与分享本次解读</span><small>内容只在你主动操作时保存或生成</small></div>
+                <div className="reading-tools" aria-label="保存与分享">
+                  <button onClick={() => persistReading()}><Save aria-hidden="true" />保存解读</button>
+                  <button onClick={copyFullReading}><Copy aria-hidden="true" />复制文字</button>
+                  <button onClick={exportShareImage}><Download aria-hidden="true" />生成分享图</button>
+                  <button onClick={copyShareLink}><Link2 aria-hidden="true" />复制只读链接</button>
+                </div>
+              </section>
 
               <section className="closing-reading">
                 <span>最后的提醒</span>

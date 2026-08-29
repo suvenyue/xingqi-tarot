@@ -1071,3 +1071,243 @@ footer { color: #747184; }
   .twinkle-star { animation: none !important; opacity: .38; }
   .stars::before,.stars::after { animation: none !important; }
 }
+
+/* Layered reading and tactile card states */
+.tarot-card {
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --glare-x: 50%;
+  --glare-y: 50%;
+  transform-style: preserve-3d;
+  transition: transform .28s cubic-bezier(.2,.78,.24,1),filter .28s ease;
+  animation-fill-mode: none;
+  will-change: transform;
+}
+.tarot-card:hover {
+  z-index: 20;
+  transform: perspective(850px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-6px) scale(1.025);
+  filter: brightness(1.04);
+}
+.spread-celtic .position-card:nth-child(2) .tarot-card:hover {
+  transform: perspective(850px) rotateZ(90deg) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-4px) scale(1.02);
+}
+.card-face {
+  --orientation: 0deg;
+  transform: rotateZ(var(--orientation));
+  transform-style: preserve-3d;
+}
+.card-face.is-reversed {
+  --orientation: 180deg;
+  transform: rotateZ(var(--orientation));
+}
+.card-face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at var(--glare-x) var(--glare-y),rgba(255,244,205,.42),rgba(255,222,147,.11) 17%,transparent 43%);
+  mix-blend-mode: screen;
+  transition: opacity .24s ease;
+}
+.tarot-card:hover .card-face::after { opacity: .58; }
+.tarot-card.revealed .card-face {
+  animation: cardRevealUpright 1s cubic-bezier(.18,.84,.28,1) both,cardFloat 5s ease-in-out 1.15s infinite;
+}
+.tarot-card.revealed .card-face.is-reversed {
+  animation: cardRevealReversed 1.5s cubic-bezier(.2,.8,.22,1) both,cardFloat 5s ease-in-out 1.65s infinite;
+}
+.tarot-card:not(.revealed) .card-back { animation: cardBackBreath 5.2s ease-in-out infinite; }
+
+.picker-card.selected::before,
+.picker-card.selected::after {
+  content: '✦';
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  z-index: 100;
+  width: 4px;
+  height: 4px;
+  color: #ffe3a2;
+  font-size: 9px;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 31px -46px #d9b768,-43px -26px #fff0bd,48px 15px #c99d59,-37px 38px #e9c97d,7px 57px #fff2c7;
+  animation: selectedDust .95s ease-out both;
+}
+.picker-card.selected::after {
+  font-size: 6px;
+  text-shadow: -55px 5px #d9b768,39px -36px #fff0bd,55px 40px #c99d59,-18px 55px #e9c97d,-22px -51px #fff2c7;
+  animation-delay: .08s;
+}
+
+.interpretations { display: grid; gap: 11px; }
+.reading-layer {
+  overflow: hidden;
+  border: 1px solid rgba(223,192,122,.15);
+  border-radius: 18px;
+  background: radial-gradient(circle at 88% 9%,rgba(139,95,179,.08),transparent 29%),linear-gradient(145deg,rgba(31,20,48,.76),rgba(8,6,17,.88));
+  box-shadow: inset 0 1px rgba(255,255,255,.03),0 14px 38px rgba(0,0,0,.09);
+}
+.reading-layer > summary {
+  display: grid;
+  grid-template-columns: 35px minmax(0,1fr) 18px;
+  align-items: center;
+  gap: 13px;
+  min-height: 76px;
+  padding: 14px 20px;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background .2s ease;
+}
+.reading-layer > summary::-webkit-details-marker { display: none; }
+.reading-layer > summary:hover { background: rgba(223,192,122,.045); }
+.reading-layer > summary:focus-visible { outline: 1px solid rgba(242,211,145,.62); outline-offset: -3px; }
+.reading-layer > summary > div { min-width: 0; }
+.reading-layer > summary strong {
+  display: block;
+  color: #f0e5d6;
+  font: 500 17px/1.25 var(--font-serif);
+}
+.reading-layer > summary small {
+  display: block;
+  margin-top: 5px;
+  color: #887d90;
+  font-size: 8px;
+  line-height: 1.5;
+  letter-spacing: .06em;
+}
+.reading-layer > summary svg { width: 15px; color: #b79a62; transition: transform .25s ease; }
+.reading-layer[open] > summary svg { transform: rotate(90deg); }
+.layer-number {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(223,192,122,.27);
+  border-radius: 50%;
+  background: rgba(223,192,122,.07);
+  color: #ddbd79;
+  font: 700 8px/1 var(--font-sans);
+  letter-spacing: .08em;
+}
+.layer-content {
+  padding: 21px 22px 23px;
+  border-top: 1px solid rgba(223,192,122,.09);
+}
+.summary-content p {
+  margin: 0;
+  color: #f0e4d2;
+  font: 500 20px/1.65 var(--font-serif);
+}
+.summary-content blockquote {
+  margin: 15px 0 0;
+  padding: 12px 15px;
+  border-left: 2px solid rgba(223,192,122,.5);
+  background: rgba(223,192,122,.045);
+  color: #aaa0af;
+  font: 11px/1.8 var(--font-serif);
+}
+.layer-panorama .overview-path { margin-top: 0; }
+.layer-cards .card-readings { padding: 0 10px 11px; }
+.layer-cards .detailed-reading { margin: 10px 0 0; }
+.relationship-content ol {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.relationship-content li {
+  position: relative;
+  padding: 12px 14px 12px 38px;
+  border: 1px solid rgba(223,192,122,.08);
+  border-radius: 11px;
+  background: rgba(3,4,12,.24);
+  color: #b9afbe;
+  font: 11px/1.75 var(--font-serif);
+}
+.relationship-content li::before {
+  content: '✦';
+  position: absolute;
+  left: 15px;
+  top: 14px;
+  color: #d3b36f;
+  font-size: 8px;
+}
+.layer-energy .structure-stats { margin: 0; }
+.layer-guidance .structure-narrative { margin: 0; }
+.reading-action-dock {
+  display: grid;
+  grid-template-columns: minmax(180px,.5fr) minmax(0,1.5fr);
+  align-items: center;
+  gap: 20px;
+  margin-top: 5px;
+  padding: 19px 20px;
+  border: 1px solid rgba(223,192,122,.21);
+  border-radius: 18px;
+  background: linear-gradient(135deg,rgba(223,192,122,.09),rgba(95,61,124,.09) 48%,rgba(8,6,17,.86));
+  box-shadow: 0 18px 48px rgba(0,0,0,.14),inset 0 1px rgba(255,255,255,.035);
+}
+.reading-action-dock > div > span {
+  display: block;
+  color: #ddc68f;
+  font: 700 8px/1 var(--font-sans);
+  letter-spacing: .2em;
+}
+.reading-action-dock strong {
+  display: block;
+  margin-top: 7px;
+  color: #eee3d6;
+  font: 500 16px/1.25 var(--font-serif);
+}
+.reading-action-dock .reading-tools { margin: 0; padding: 0; border: 0; }
+
+@keyframes cardRevealUpright {
+  0% { opacity: 0; transform: rotateY(84deg) rotateZ(0deg) scale(.94); filter: brightness(.72); }
+  100% { opacity: 1; transform: rotateY(0deg) rotateZ(0deg) scale(1); filter: brightness(1); }
+}
+@keyframes cardRevealReversed {
+  0% { opacity: 0; transform: rotateY(84deg) rotateZ(0deg) scale(.94); filter: brightness(.72); }
+  48% { opacity: 1; transform: rotateY(0deg) rotateZ(0deg) scale(1); filter: brightness(1); }
+  100% { opacity: 1; transform: rotateY(0deg) rotateZ(180deg) scale(1); filter: brightness(1); }
+}
+@keyframes cardFloat {
+  0%,100% { transform: translateY(0) rotateZ(var(--orientation)); filter: drop-shadow(0 9px 13px rgba(0,0,0,.12)); }
+  50% { transform: translateY(-4px) rotateZ(var(--orientation)); filter: drop-shadow(0 14px 18px rgba(205,164,91,.13)); }
+}
+@keyframes cardBackBreath {
+  0%,100% { box-shadow: 0 18px 38px rgba(0,0,0,.34),0 0 0 rgba(223,192,122,0); }
+  50% { box-shadow: 0 23px 47px rgba(0,0,0,.43),0 0 26px rgba(223,192,122,.09); }
+}
+@keyframes selectedDust {
+  0% { opacity: 0; transform: translate(-50%,-50%) scale(.22) rotate(0deg); }
+  24% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%,-50%) scale(1.65) rotate(25deg); }
+}
+
+@media (max-width: 560px) {
+  .reading-layer { border-radius: 15px; }
+  .reading-layer > summary { grid-template-columns: 29px minmax(0,1fr) 15px; gap: 10px; min-height: 69px; padding: 12px 14px; }
+  .layer-number { width: 29px; height: 29px; font-size: 7px; }
+  .reading-layer > summary strong { font-size: 15px; }
+  .reading-layer > summary small { font-size: 7px; }
+  .layer-content { padding: 17px 15px 18px; }
+  .summary-content p { font-size: 17px; }
+  .layer-cards .card-readings { padding: 0 5px 7px; }
+  .reading-action-dock { grid-template-columns: 1fr; gap: 14px; padding: 17px 15px; }
+}
+
+@media (hover: none),(pointer: coarse) {
+  .tarot-card:hover { transform: none; filter: none; }
+  .spread-celtic .position-card:nth-child(2) .tarot-card:hover { transform: rotate(90deg); }
+  .tarot-card:hover .card-face::after { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tarot-card,.tarot-card.revealed .card-face,.tarot-card:not(.revealed) .card-back,.picker-card.selected::before,.picker-card.selected::after { animation: none !important; }
+  .card-face.is-reversed { transform: rotate(180deg); }
+}
