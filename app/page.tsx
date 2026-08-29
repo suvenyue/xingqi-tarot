@@ -534,81 +534,6 @@ export default function Home() {
 
     type ConstellationNode = { px: number; py: number; size: number; drift: number };
     type TrailParticle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; hue: number };
-    type SigilPoint = { x: number; y: number; part: number };
-    const addLine = (target: SigilPoint[], part: number, x1: number, y1: number, x2: number, y2: number, count = 10) => {
-      for (let index = 0; index <= count; index += 1) {
-        const progress = index / count;
-        target.push({ x: x1 + (x2 - x1) * progress, y: y1 + (y2 - y1) * progress, part });
-      }
-    };
-    const addArc = (target: SigilPoint[], part: number, cx: number, cy: number, radiusX: number, radiusY: number, start: number, end: number, count = 28) => {
-      for (let index = 0; index <= count; index += 1) {
-        const angle = start + (end - start) * (index / count);
-        target.push({ x: cx + Math.cos(angle) * radiusX, y: cy + Math.sin(angle) * radiusY, part });
-      }
-    };
-    const buildSun = () => {
-      const points: SigilPoint[] = [];
-      addArc(points, 0, 0, 0, 28, 28, 0, Math.PI * 2, 34);
-      for (let ray = 0; ray < 12; ray += 1) {
-        const angle = ray * Math.PI / 6;
-        addLine(points, ray + 1, Math.cos(angle) * 39, Math.sin(angle) * 39, Math.cos(angle) * 55, Math.sin(angle) * 55, 4);
-      }
-      return points;
-    };
-    const buildMoon = () => {
-      const points: SigilPoint[] = [];
-      addArc(points, 0, 0, 0, 42, 52, -Math.PI / 2, Math.PI / 2, 38);
-      addArc(points, 1, -15, 0, 37, 43, Math.PI / 2, -Math.PI / 2, 34);
-      return points;
-    };
-    const buildPentacle = () => {
-      const points: SigilPoint[] = [];
-      addArc(points, 0, 0, 0, 49, 49, 0, Math.PI * 2, 40);
-      const vertices = Array.from({ length: 5 }, (_, index) => {
-        const angle = -Math.PI / 2 + index * Math.PI * 2 / 5;
-        return { x: Math.cos(angle) * 39, y: Math.sin(angle) * 39 };
-      });
-      const order = [0, 2, 4, 1, 3, 0];
-      order.slice(0, -1).forEach((vertex, index) => addLine(points, index + 1, vertices[vertex].x, vertices[vertex].y, vertices[order[index + 1]].x, vertices[order[index + 1]].y, 10));
-      return points;
-    };
-    const buildCup = () => {
-      const points: SigilPoint[] = [];
-      addArc(points, 0, 0, -25, 39, 13, Math.PI, Math.PI * 2, 24);
-      addArc(points, 1, 0, -25, 39, 45, 0, Math.PI, 28);
-      addLine(points, 2, 0, 20, 0, 51, 12);
-      addLine(points, 3, -25, 53, 25, 53, 14);
-      return points;
-    };
-    const buildSword = () => {
-      const points: SigilPoint[] = [];
-      addLine(points, 0, 0, -57, -9, 28, 20);
-      addLine(points, 1, -9, 28, 0, 20, 4);
-      addLine(points, 2, 0, 20, 9, 28, 4);
-      addLine(points, 3, 9, 28, 0, -57, 20);
-      addLine(points, 4, -35, 31, 35, 31, 16);
-      addLine(points, 5, 0, 31, 0, 54, 7);
-      addArc(points, 6, 0, 55, 10, 8, 0, Math.PI * 2, 12);
-      return points;
-    };
-    const buildWand = () => {
-      const points: SigilPoint[] = [];
-      addLine(points, 0, -28, 55, 23, -55, 30);
-      addLine(points, 1, -8, 13, -30, 1, 7);
-      addLine(points, 2, -3, 2, 21, -7, 7);
-      addLine(points, 3, 7, -20, -12, -34, 7);
-      addLine(points, 4, 13, -34, 35, -41, 7);
-      return points;
-    };
-    const sigils = [
-      { name: '太阳', points: buildSun() },
-      { name: '月亮', points: buildMoon() },
-      { name: '星币', points: buildPentacle() },
-      { name: '圣杯', points: buildCup() },
-      { name: '宝剑', points: buildSword() },
-      { name: '权杖', points: buildWand() },
-    ];
     const nodes: ConstellationNode[] = Array.from({ length: 30 }, (_, index) => ({
       px: ((index * 47 + 11) % 97) / 100,
       py: ((index * 71 + 7) % 91) / 100,
@@ -619,14 +544,6 @@ export default function Home() {
     let animationFrame = 0;
     let animationRunning = false;
     let activeUntil = 0;
-    let trailActiveUntil = 0;
-    let sigilReadyAt = 0;
-    let sigilEndsAt = 0;
-    let sigilCenterX = 0;
-    let sigilCenterY = 0;
-    let sigilIndex = 0;
-    let previousSigilIndex = -1;
-    let sigilPending = false;
     let width = window.innerWidth;
     let height = window.innerHeight;
     let lastX = -100;
@@ -653,18 +570,7 @@ export default function Home() {
     const addTrail = (event: PointerEvent) => {
       if (event.pointerType && event.pointerType !== 'mouse') return;
       const now = performance.now();
-      trailActiveUntil = now + 620;
-      sigilReadyAt = now + 600;
-      sigilEndsAt = sigilReadyAt + 1750;
-      activeUntil = sigilEndsAt + 60;
-      sigilCenterX = Math.max(90, Math.min(width - 90, event.clientX));
-      sigilCenterY = Math.max(90, Math.min(height - 112, event.clientY));
-      if (!sigilPending) {
-        const candidate = secureRandomIndex(sigils.length - 1);
-        sigilIndex = previousSigilIndex < 0 ? secureRandomIndex(sigils.length) : candidate >= previousSigilIndex ? candidate + 1 : candidate;
-        previousSigilIndex = sigilIndex;
-        sigilPending = true;
-      }
+      activeUntil = now + 620;
       if (now - lastSpawn < 12) {
         ensureAnimation();
         return;
@@ -694,7 +600,7 @@ export default function Home() {
 
     function paint(time: number) {
       context.clearRect(0, 0, width, height);
-      const constellationOpacity = Math.max(0, Math.min(1, (trailActiveUntil - time) / 220));
+      const constellationOpacity = Math.max(0, Math.min(1, (activeUntil - time) / 220));
       if (constellationOpacity > 0) {
         const points = nodes.map((node) => ({
           x: node.px * width + Math.sin(time / 6500 + node.drift) * 3,
@@ -726,62 +632,6 @@ export default function Home() {
           context.fillStyle = `rgba(244,221,170,${awake * .65})`;
           context.fill();
         });
-      }
-
-      if (sigilPending && time >= sigilReadyAt && time <= sigilEndsAt) {
-        const elapsed = time - sigilReadyAt;
-        const gatherProgress = Math.min(1, elapsed / 520);
-        const gatherEase = 1 - Math.pow(1 - gatherProgress, 3);
-        const fade = elapsed > 1250 ? Math.max(0, 1 - (elapsed - 1250) / 500) : 1;
-        const reveal = Math.min(1, elapsed / 220);
-        const opacity = reveal * fade;
-        const sigil = sigils[sigilIndex];
-        const placed = sigil.points.map((point, index) => {
-          const scatterAngle = index * 2.399963 + sigilIndex * .61;
-          const scatterRadius = 55 + (index % 9) * 6;
-          const scatterX = Math.cos(scatterAngle + time / 1700) * scatterRadius;
-          const scatterY = Math.sin(scatterAngle + time / 1900) * scatterRadius;
-          return {
-            x: sigilCenterX + scatterX * (1 - gatherEase) + point.x * gatherEase,
-            y: sigilCenterY + scatterY * (1 - gatherEase) + point.y * gatherEase,
-            part: point.part,
-          };
-        });
-
-        context.save();
-        context.globalCompositeOperation = 'lighter';
-        if (gatherProgress > .48) {
-          context.beginPath();
-          placed.forEach((point, index) => {
-            const previous = placed[index - 1];
-            if (!previous || previous.part !== point.part) context.moveTo(point.x, point.y);
-            else context.lineTo(point.x, point.y);
-          });
-          context.strokeStyle = `rgba(226,190,117,${opacity * gatherEase * .31})`;
-          context.lineWidth = .7;
-          context.shadowColor = 'rgba(210,160,79,.52)';
-          context.shadowBlur = 8;
-          context.stroke();
-        }
-        placed.forEach((point, index) => {
-          const pulse = .82 + Math.sin(time / 230 + index * .61) * .18;
-          context.beginPath();
-          context.arc(point.x, point.y, .75 + pulse * .72, 0, Math.PI * 2);
-          context.fillStyle = `rgba(255,224,158,${opacity * (.5 + pulse * .34)})`;
-          context.shadowColor = 'rgba(225,176,91,.9)';
-          context.shadowBlur = 8;
-          context.fill();
-        });
-        context.globalCompositeOperation = 'source-over';
-        context.shadowBlur = 0;
-        context.globalAlpha = opacity * Math.max(0, Math.min(1, (elapsed - 360) / 260));
-        context.fillStyle = '#d9bd83';
-        context.font = '500 11px "Noto Serif SC", serif';
-        context.textAlign = 'center';
-        context.fillText(sigil.name, sigilCenterX, sigilCenterY + 82);
-        context.restore();
-      } else if (sigilPending && time > sigilEndsAt) {
-        sigilPending = false;
       }
 
       context.globalCompositeOperation = 'lighter';
@@ -823,8 +673,6 @@ export default function Home() {
       if (!document.hidden) return;
       particles = [];
       activeUntil = 0;
-      trailActiveUntil = 0;
-      sigilPending = false;
       animationRunning = false;
       window.cancelAnimationFrame(animationFrame);
       context.clearRect(0, 0, width, height);
