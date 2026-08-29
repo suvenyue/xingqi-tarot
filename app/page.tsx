@@ -26,7 +26,7 @@ const ritualCopy: Record<Exclude<RitualStage, 'idle'>, { eyebrow: string; title:
   opening: { eyebrow: 'THE PATH IS OPENING', title: '牌阵之门已经打开', note: '接下来，请从完整牌组中亲手选出吸引你的牌。' },
 };
 
-const twinkleStars = Array.from({ length: 38 }, (_, index) => ({
+const twinkleStars = Array.from({ length: 26 }, (_, index) => ({
   left: `${(index * 37 + 9) % 100}%`,
   top: `${(index * 53 + 6) % 100}%`,
   '--twinkle-size': `${1.2 + (index % 5) * .46}px`,
@@ -441,7 +441,6 @@ export default function Home() {
   const [revealBurst, setRevealBurst] = useState(false);
   const fanRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<HTMLCanvasElement>(null);
-  const constellationRef = useRef<HTMLCanvasElement>(null);
   const ritualTimersRef = useRef<number[]>([]);
   const burstTimerRef = useRef<number | null>(null);
   const spreadInfo = spreadDefinitions[spread];
@@ -502,126 +501,59 @@ export default function Home() {
   }, [isSelecting, selectionDeck]);
 
   useEffect(() => {
-    const canvas = constellationRef.current;
-    if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const canvas = trailRef.current;
+    if (!canvas || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const context = canvas.getContext('2d');
     if (!context) return;
 
     type ConstellationNode = { px: number; py: number; size: number; drift: number };
-    const nodes: ConstellationNode[] = Array.from({ length: 44 }, (_, index) => ({
+    type TrailParticle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; hue: number };
+    const nodes: ConstellationNode[] = Array.from({ length: 30 }, (_, index) => ({
       px: ((index * 47 + 11) % 97) / 100,
       py: ((index * 71 + 7) % 91) / 100,
-      size: .7 + (index % 5) * .28,
+      size: .65 + (index % 4) * .3,
       drift: index * .73,
     }));
+    let particles: TrailParticle[] = [];
+    let animationFrame = 0;
+    let animationRunning = false;
+    let activeUntil = 0;
     let width = window.innerWidth;
     let height = window.innerHeight;
-    let ratio = 1;
-    let animationFrame = 0;
-    let pointerX = -1000;
-    let pointerY = -1000;
-    let pointerActive = false;
+    let lastX = -100;
+    let lastY = -100;
+    let lastSpawn = 0;
 
     const resize = () => {
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.35);
       width = window.innerWidth;
       height = window.innerHeight;
-      ratio = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
     };
-    const followPointer = (event: PointerEvent) => {
-      if (event.pointerType && event.pointerType !== 'mouse') return;
-      pointerX = event.clientX;
-      pointerY = event.clientY;
-      pointerActive = true;
-    };
-    const leavePointer = () => { pointerActive = false; };
 
-    const paint = (time: number) => {
-      context.clearRect(0, 0, width, height);
-      const points = nodes.map((node) => ({
-        x: node.px * width + Math.sin(time / 6500 + node.drift) * 5,
-        y: node.py * height + Math.cos(time / 7800 + node.drift) * 4,
-        size: node.size,
-      }));
-
-      if (pointerActive) {
-        for (let first = 0; first < points.length; first += 1) {
-          const a = points[first];
-          const pointerDistanceA = Math.hypot(a.x - pointerX, a.y - pointerY);
-          if (pointerDistanceA > 230) continue;
-          for (let second = first + 1; second < points.length; second += 1) {
-            const b = points[second];
-            const pointerDistanceB = Math.hypot(b.x - pointerX, b.y - pointerY);
-            const nodeDistance = Math.hypot(a.x - b.x, a.y - b.y);
-            if (pointerDistanceB > 230 || nodeDistance > 145) continue;
-            const opacity = Math.min(1 - pointerDistanceA / 230, 1 - pointerDistanceB / 230) * (1 - nodeDistance / 170);
-            context.beginPath();
-            context.moveTo(a.x, a.y);
-            context.lineTo(b.x, b.y);
-            context.strokeStyle = `rgba(214,190,255,${Math.max(0, opacity) * .42})`;
-            context.lineWidth = .65;
-            context.stroke();
-          }
-        }
-      }
-
-      points.forEach((point) => {
-        const distance = Math.hypot(point.x - pointerX, point.y - pointerY);
-        const awake = pointerActive ? Math.max(0, 1 - distance / 205) : 0;
-        context.beginPath();
-        context.arc(point.x, point.y, point.size + awake * 1.15, 0, Math.PI * 2);
-        context.fillStyle = `rgba(244,221,170,${.12 + awake * .7})`;
-        context.shadowColor = `rgba(193,157,255,${awake * .72})`;
-        context.shadowBlur = awake * 15;
-        context.fill();
-      });
-      context.shadowBlur = 0;
+    const ensureAnimation = () => {
+      if (animationRunning || document.hidden) return;
+      animationRunning = true;
       animationFrame = window.requestAnimationFrame(paint);
-    };
-
-    resize();
-    animationFrame = window.requestAnimationFrame(paint);
-    window.addEventListener('resize', resize);
-    window.addEventListener('pointermove', followPointer, { passive: true });
-    document.documentElement.addEventListener('mouseleave', leavePointer);
-    return () => {
-      window.removeEventListener('resize', resize);
-      window.removeEventListener('pointermove', followPointer);
-      document.documentElement.removeEventListener('mouseleave', leavePointer);
-      window.cancelAnimationFrame(animationFrame);
-    };
-  }, []);
-
-  useEffect(() => {
-    const canvas = trailRef.current;
-    if (!canvas || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    type TrailParticle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; hue: number };
-    let particles: TrailParticle[] = [];
-    let animationFrame = 0;
-    let lastX = -100;
-    let lastY = -100;
-
-    const resize = () => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(window.innerWidth * ratio);
-      canvas.height = Math.round(window.innerHeight * ratio);
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
     };
 
     const addTrail = (event: PointerEvent) => {
       if (event.pointerType && event.pointerType !== 'mouse') return;
+      const now = performance.now();
+      activeUntil = now + 620;
+      if (now - lastSpawn < 12) {
+        ensureAnimation();
+        return;
+      }
       const distance = Math.hypot(event.clientX - lastX, event.clientY - lastY);
-      const count = Math.min(3, Math.max(1, Math.ceil(distance / 16)));
+      const count = Math.min(2, Math.max(1, Math.ceil(distance / 22)));
       for (let index = 0; index < count; index += 1) {
         const progress = count === 1 ? 1 : index / (count - 1);
-        const life = 28 + secureRandomIndex(18);
+        const life = 22 + secureRandomIndex(14);
         particles.push({
           x: lastX < 0 ? event.clientX : lastX + (event.clientX - lastX) * progress,
           y: lastY < 0 ? event.clientY : lastY + (event.clientY - lastY) * progress,
@@ -629,20 +561,53 @@ export default function Home() {
           vy: -.12 - secureRandomIndex(35) / 180,
           life,
           maxLife: life,
-          size: 1.2 + secureRandomIndex(20) / 10,
+          size: 1.1 + secureRandomIndex(16) / 10,
           hue: secureRandomIndex(5) === 0 ? 267 : 42 + secureRandomIndex(10),
         });
       }
-      particles = particles.slice(-82);
+      particles = particles.slice(-52);
       lastX = event.clientX;
       lastY = event.clientY;
+      lastSpawn = now;
+      ensureAnimation();
     };
 
-    const paint = () => {
-      context.save();
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.restore();
+    function paint(time: number) {
+      context.clearRect(0, 0, width, height);
+      const constellationOpacity = Math.max(0, Math.min(1, (activeUntil - time) / 220));
+      if (constellationOpacity > 0) {
+        const points = nodes.map((node) => ({
+          x: node.px * width + Math.sin(time / 6500 + node.drift) * 3,
+          y: node.py * height + Math.cos(time / 7800 + node.drift) * 3,
+          size: node.size,
+        }));
+        for (let first = 0; first < points.length; first += 1) {
+          const a = points[first];
+          const distanceA = Math.hypot(a.x - lastX, a.y - lastY);
+          if (distanceA > 210) continue;
+          for (let second = first + 1; second < points.length; second += 1) {
+            const b = points[second];
+            const nodeDistance = Math.hypot(a.x - b.x, a.y - b.y);
+            if (nodeDistance > 140 || Math.hypot(b.x - lastX, b.y - lastY) > 210) continue;
+            const opacity = (1 - distanceA / 210) * (1 - nodeDistance / 155) * constellationOpacity;
+            context.beginPath();
+            context.moveTo(a.x, a.y);
+            context.lineTo(b.x, b.y);
+            context.strokeStyle = `rgba(188,164,235,${Math.max(0, opacity) * .32})`;
+            context.lineWidth = .55;
+            context.stroke();
+          }
+        }
+        points.forEach((point) => {
+          const awake = Math.max(0, 1 - Math.hypot(point.x - lastX, point.y - lastY) / 195) * constellationOpacity;
+          if (awake <= 0) return;
+          context.beginPath();
+          context.arc(point.x, point.y, point.size + awake, 0, Math.PI * 2);
+          context.fillStyle = `rgba(244,221,170,${awake * .65})`;
+          context.fill();
+        });
+      }
+
       context.globalCompositeOperation = 'lighter';
       particles.forEach((particle) => {
         const opacity = Math.max(0, particle.life / particle.maxLife);
@@ -671,16 +636,30 @@ export default function Home() {
       particles = particles.filter((particle) => particle.life > 0);
       context.shadowBlur = 0;
       context.globalCompositeOperation = 'source-over';
-      animationFrame = window.requestAnimationFrame(paint);
+      if (particles.length || time < activeUntil) {
+        animationFrame = window.requestAnimationFrame(paint);
+      } else {
+        animationRunning = false;
+      }
+    }
+
+    const pauseWhenHidden = () => {
+      if (!document.hidden) return;
+      particles = [];
+      activeUntil = 0;
+      animationRunning = false;
+      window.cancelAnimationFrame(animationFrame);
+      context.clearRect(0, 0, width, height);
     };
 
     resize();
-    paint();
     window.addEventListener('resize', resize);
     window.addEventListener('pointermove', addTrail, { passive: true });
+    document.addEventListener('visibilitychange', pauseWhenHidden);
     return () => {
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', addTrail);
+      document.removeEventListener('visibilitychange', pauseWhenHidden);
       window.cancelAnimationFrame(animationFrame);
     };
   }, []);
@@ -914,10 +893,9 @@ export default function Home() {
 
   return (
     <main className="min-h-screen overflow-hidden">
-      <canvas ref={constellationRef} className="constellation-field" aria-hidden="true" />
-      <canvas ref={trailRef} className="cursor-trail" aria-hidden="true" />
+      <canvas ref={trailRef} className="sky-effects" aria-hidden="true" />
       <div className="stars" aria-hidden="true">
-        {twinkleStars.map((style, index) => <span className={`twinkle-star ${index % 7 === 0 ? 'star-cross' : ''}`} style={style} key={`star-${index}`} />)}
+        {twinkleStars.map((style, index) => <span className={`twinkle-star ${index % 9 === 0 ? 'star-cross' : ''}`} style={style} key={`star-${index}`} />)}
       </div>
       <header className="site-header">
         <a href="#top" className="brand" aria-label="星契塔罗首页" onClick={() => setView('reading')}>
@@ -997,7 +975,7 @@ export default function Home() {
                     <button
                       type="button"
                       key={`choose-${card.id}`}
-                      className={`picker-card ${selectedIndex >= 0 ? 'selected' : ''}`}
+                      className={`picker-card ${Math.abs(index - center) <= 17 ? 'fan-animated' : ''} ${selectedIndex >= 0 ? 'selected' : ''}`}
                       style={style}
                       onClick={() => selectCard(card)}
                       disabled={selectedIndex >= 0 || selectedCards.length >= spreadInfo.positions.length}
