@@ -1119,6 +1119,20 @@ footer { color: #747184; }
 .tarot-card.revealed .card-face.is-reversed {
   animation: cardRevealReversed 1.5s cubic-bezier(.2,.8,.22,1) both,cardFloat 5s ease-in-out 1.65s infinite;
 }
+.spread-celtic .tarot-card.revealed .card-face,
+.spread-relationship .tarot-card.revealed .card-face,
+.spread-choice .tarot-card.revealed .card-face,
+.spread-career .tarot-card.revealed .card-face,
+.spread-year .tarot-card.revealed .card-face {
+  animation: cardRevealUpright .9s cubic-bezier(.18,.84,.28,1) both;
+}
+.spread-celtic .tarot-card.revealed .card-face.is-reversed,
+.spread-relationship .tarot-card.revealed .card-face.is-reversed,
+.spread-choice .tarot-card.revealed .card-face.is-reversed,
+.spread-career .tarot-card.revealed .card-face.is-reversed,
+.spread-year .tarot-card.revealed .card-face.is-reversed {
+  animation: cardRevealReversed 1.25s cubic-bezier(.2,.8,.22,1) both;
+}
 .tarot-card:not(.revealed) .card-back { animation: cardBackBreath 5.2s ease-in-out infinite; }
 
 .picker-card.selected::before,
@@ -1145,6 +1159,8 @@ footer { color: #747184; }
 
 .interpretations { display: grid; gap: 11px; }
 .reading-layer {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
   overflow: hidden;
   border: 1px solid rgba(223,192,122,.15);
   border-radius: 18px;
@@ -1365,8 +1381,8 @@ footer { color: #747184; }
   100% { opacity: 1; transform: rotateY(0deg) rotateZ(180deg) scale(1); filter: brightness(1); }
 }
 @keyframes cardFloat {
-  0%,100% { transform: translateY(0) rotateZ(var(--orientation)); filter: drop-shadow(0 9px 13px rgba(0,0,0,.12)); }
-  50% { transform: translateY(-4px) rotateZ(var(--orientation)); filter: drop-shadow(0 14px 18px rgba(205,164,91,.13)); }
+  0%,100% { transform: translateY(0) rotateZ(var(--orientation)); }
+  50% { transform: translateY(-3px) rotateZ(var(--orientation)); }
 }
 @keyframes cardBackBreath {
   0%,100% { box-shadow: 0 18px 38px rgba(0,0,0,.34),0 0 0 rgba(223,192,122,0); }

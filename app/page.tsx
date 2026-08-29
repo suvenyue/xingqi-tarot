@@ -42,7 +42,7 @@ function starNoise(index: number, salt: number) {
   return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
 }
 
-const twinkleStars = Array.from({ length: 28 }, (_, index) => ({
+const twinkleStars = Array.from({ length: 22 }, (_, index) => ({
   left: `${3 + starNoise(index, 1) * 94}%`,
   top: `${2 + starNoise(index, 2) * 95}%`,
   '--twinkle-size': `${.85 + starNoise(index, 3) * 2.15}px`,
@@ -579,8 +579,8 @@ export default function Home() {
 
   useEffect(() => {
     if (!chatMessages.length) return;
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [chatMessages, isChatStreaming]);
+    chatEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+  }, [chatMessages.length]);
 
   useEffect(() => {
     if (!isSelecting || !fanRef.current) return;
@@ -596,7 +596,7 @@ export default function Home() {
 
     type ConstellationNode = { px: number; py: number; size: number; drift: number };
     type TrailParticle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; size: number; hue: number };
-    const nodes: ConstellationNode[] = Array.from({ length: 30 }, (_, index) => ({
+    const nodes: ConstellationNode[] = Array.from({ length: 18 }, (_, index) => ({
       px: ((index * 47 + 11) % 97) / 100,
       py: ((index * 71 + 7) % 91) / 100,
       size: .65 + (index % 4) * .3,
@@ -613,7 +613,7 @@ export default function Home() {
     let lastSpawn = 0;
 
     const resize = () => {
-      const ratio = Math.min(window.devicePixelRatio || 1, 1.35);
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.15);
       width = window.innerWidth;
       height = window.innerHeight;
       canvas.width = Math.round(width * ratio);
@@ -632,13 +632,13 @@ export default function Home() {
     const addTrail = (event: PointerEvent) => {
       if (event.pointerType && event.pointerType !== 'mouse') return;
       const now = performance.now();
-      activeUntil = now + 620;
-      if (now - lastSpawn < 12) {
+      activeUntil = now + 480;
+      if (now - lastSpawn < 20) {
         ensureAnimation();
         return;
       }
       const distance = Math.hypot(event.clientX - lastX, event.clientY - lastY);
-      const count = Math.min(2, Math.max(1, Math.ceil(distance / 22)));
+      const count = Math.min(2, Math.max(1, Math.ceil(distance / 30)));
       for (let index = 0; index < count; index += 1) {
         const progress = count === 1 ? 1 : index / (count - 1);
         const life = 22 + secureRandomIndex(14);
@@ -653,7 +653,7 @@ export default function Home() {
           hue: secureRandomIndex(5) === 0 ? 267 : 42 + secureRandomIndex(10),
         });
       }
-      particles = particles.slice(-52);
+      particles = particles.slice(-34);
       lastX = event.clientX;
       lastY = event.clientY;
       lastSpawn = now;
@@ -863,15 +863,20 @@ export default function Home() {
       if (!reader) throw new Error('当前浏览器无法读取流式回复。');
       const decoder = new TextDecoder();
       let assistantText = '';
+      let lastRenderedAt = 0;
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         assistantText += decoder.decode(value, { stream: true });
-        setChatMessages([
-          ...baseMessages,
-          { id: assistantId, role: 'assistant', content: assistantText, createdAt: Date.now() },
-        ]);
+        const now = performance.now();
+        if (now - lastRenderedAt >= 140) {
+          lastRenderedAt = now;
+          setChatMessages([
+            ...baseMessages,
+            { id: assistantId, role: 'assistant', content: assistantText, createdAt: Date.now() },
+          ]);
+        }
       }
 
       assistantText += decoder.decode();
