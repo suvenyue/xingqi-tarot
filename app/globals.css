@@ -502,20 +502,14 @@ body::before {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.01) 1px,transparent 1px);
-  background-size: 72px 72px;
-  mask-image: radial-gradient(circle at center,black,transparent 82%);
+  background: radial-gradient(ellipse at center,transparent 46%,rgba(3,2,8,.28) 100%);
 }
 
 .stars {
   z-index: 0;
   overflow: hidden;
   opacity: 1;
-  background-image:
-    radial-gradient(circle,rgba(235,226,255,.2) 0 .7px,transparent 1.25px),
-    radial-gradient(circle,rgba(228,198,129,.19) 0 .8px,transparent 1.35px);
-  background-size: 111px 111px,173px 173px;
-  background-position: 22px 31px,61px 7px;
+  background: transparent;
   mask-image: linear-gradient(to bottom,black 0%,black 73%,transparent 100%);
 }
 .stars::before,.stars::after {
@@ -880,12 +874,14 @@ h1 { color: #faf2e3; text-shadow: 0 12px 45px rgba(0,0,0,.32); }
 .table-panel {
   background-image:
     radial-gradient(ellipse at 50% 0%,rgba(112,74,151,.18),transparent 39%),
-    radial-gradient(circle at 18% 23%,rgba(255,239,199,.055) 0 .7px,transparent 1px),
     linear-gradient(150deg,rgba(24,15,36,.96),rgba(7,5,14,.99));
-  background-size: auto,97px 97px,auto;
-  background-position: center top,0 0,center;
-  background-repeat: no-repeat,repeat,no-repeat;
+  background-size: auto,auto;
+  background-position: center top,center;
+  background-repeat: no-repeat,no-repeat;
 }
+.table-stars { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; opacity: .58; mask-image: radial-gradient(ellipse at center,black 8%,rgba(0,0,0,.72) 64%,transparent 100%); }
+.table-stars .twinkle-star { position: absolute; }
+.table-panel > :not(.table-stars,.table-art,.element-burst) { position: relative; z-index: 2; }
 .selection-ritual { background-image: radial-gradient(circle at 50% 32%,rgba(102,72,147,.16),transparent 35%),radial-gradient(circle at 21% 14%,rgba(255,239,199,.04) 0 .7px,transparent 1px),linear-gradient(145deg,rgba(27,17,41,.96),rgba(7,5,14,.99)); }
 
 .spread-scene-caption { position: relative; z-index: 3; width: fit-content; max-width: 92%; margin: -9px auto 12px; display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 9px; border: 1px solid rgba(223,192,122,.13); border-radius: 999px; background: rgba(8,5,15,.42); text-align: left; }

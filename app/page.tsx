@@ -36,14 +36,20 @@ const ritualCopy: Record<Exclude<RitualStage, 'idle'>, { eyebrow: string; title:
   opening: { eyebrow: 'THE PATH IS OPENING', title: '牌阵之门已经打开', note: '接下来，请从完整牌组中亲手选出吸引你的牌。' },
 };
 
-const twinkleStars = Array.from({ length: 26 }, (_, index) => ({
-  left: `${(index * 37 + 9) % 100}%`,
-  top: `${(index * 53 + 6) % 100}%`,
-  '--twinkle-size': `${1.2 + (index % 5) * .46}px`,
-  '--twinkle-delay': `${-(index % 13) * .62}s`,
-  '--twinkle-duration': `${3.4 + (index % 7) * .68}s`,
-  '--twinkle-drift': `${4 + (index % 4) * 2}px`,
-  '--twinkle-rise': `${-3 - (index % 5)}px`,
+function starNoise(index: number, salt: number) {
+  let value = Math.imul(index + 1, 0x45d9f3b) ^ Math.imul(salt + 1, 0x27d4eb2d);
+  value = Math.imul(value ^ (value >>> 16), 0x45d9f3b);
+  return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
+}
+
+const twinkleStars = Array.from({ length: 28 }, (_, index) => ({
+  left: `${3 + starNoise(index, 1) * 94}%`,
+  top: `${2 + starNoise(index, 2) * 95}%`,
+  '--twinkle-size': `${.85 + starNoise(index, 3) * 2.15}px`,
+  '--twinkle-delay': `${-starNoise(index, 4) * 8.5}s`,
+  '--twinkle-duration': `${3.8 + starNoise(index, 5) * 5.2}s`,
+  '--twinkle-drift': `${-8 + starNoise(index, 6) * 16}px`,
+  '--twinkle-rise': `${-11 + starNoise(index, 7) * 15}px`,
 } as CSSProperties));
 
 const spreadDefinitions: Record<Spread, SpreadDefinition> = {
@@ -1155,6 +1161,9 @@ export default function Home() {
               })}
             </div>
           )}
+          <div className="table-stars" aria-hidden="true">
+            {twinkleStars.slice(0,14).map((style, index) => <span className={`twinkle-star ${index % 7 === 0 ? 'star-cross' : ''}`} style={style} key={`table-star-${index}`} />)}
+          </div>
           <img className="table-art" src="/og.png" alt="" aria-hidden="true" />
           <div className="moon-orbit" aria-hidden="true"><span>☾</span></div>
           <p className="table-kicker">{drawn.length ? 'YOUR READING' : 'THE CARDS ARE WAITING'}</p>
