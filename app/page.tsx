@@ -1306,6 +1306,7 @@ export default function Home() {
                 {selectionDeck.map((card, index) => {
                   const selectedIndex = selectedCards.findIndex((selected) => selected.id === card.id);
                   const center = (selectionDeck.length - 1) / 2;
+                  const isCenterCard = Math.abs(index - center) <= .5;
                   const style = {
                     '--fan-angle': `${(index - center) * .42}deg`,
                     '--fan-drop': `${Math.abs(index - center) * .55}px`,
@@ -1315,7 +1316,7 @@ export default function Home() {
                     <button
                       type="button"
                       key={`choose-${card.id}`}
-                      className={`picker-card ${Math.abs(index - center) <= 17 ? 'fan-animated' : ''} ${selectedIndex >= 0 ? 'selected' : ''}`}
+                      className={`picker-card ${Math.abs(index - center) <= 17 ? 'fan-animated' : ''} ${isCenterCard ? 'center-card' : ''} ${selectedIndex >= 0 ? 'selected' : ''}`}
                       style={style}
                       onClick={() => selectCard(card)}
                       disabled={selectedIndex >= 0 || selectedCards.length >= spreadInfo.positions.length}
