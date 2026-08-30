@@ -53,6 +53,122 @@ const twinkleStars = Array.from({ length: 22 }, (_, index) => ({
   '--twinkle-rise': `${-11 + starNoise(index, 7) * 15}px`,
 } as CSSProperties));
 
+type SkyMode = 'auto' | 'night';
+type SkyPeriod = 'dawn' | 'day' | 'dusk' | 'night';
+type ConstellationZone = 'reading' | 'selection' | 'daily' | 'library' | 'history';
+type ConstellationPoint = readonly [number, number];
+type ConstellationSpec = {
+  id: string;
+  name: string;
+  en: string;
+  zone: ConstellationZone;
+  points: ConstellationPoint[];
+  lines: readonly [number, number][];
+  bright: number[];
+  position: { left: string; top: string; width: string; rotate: string; delay: string };
+};
+
+const SKY_MODE_KEY = 'xingqi-sky-mode-v1';
+
+function skyPeriodFor(date = new Date()): SkyPeriod {
+  const hour = date.getHours() + date.getMinutes() / 60;
+  if (hour >= 5 && hour < 9) return 'dawn';
+  if (hour >= 9 && hour < 17) return 'day';
+  if (hour >= 17 && hour < 20) return 'dusk';
+  return 'night';
+}
+
+const constellationSpecs: ConstellationSpec[] = [
+  {
+    id: 'orion', name: '猎户座', en: 'ORION', zone: 'reading', bright: [0,1,5],
+    points: [[25,13],[72,18],[42,45],[52,48],[62,51],[29,87],[76,89],[18,36],[82,38]],
+    lines: [[0,1],[0,7],[7,2],[2,3],[3,4],[4,8],[8,1],[2,5],[4,6]],
+    position: { left: '3%', top: '15%', width: '210px', rotate: '-8deg', delay: '-2s' },
+  },
+  {
+    id: 'ursa-major', name: '大熊座', en: 'URSA MAJOR', zone: 'reading', bright: [0,3,6],
+    points: [[8,34],[25,27],[43,31],[59,43],[76,35],[91,45],[82,66]],
+    lines: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,3]],
+    position: { left: '70%', top: '11%', width: '270px', rotate: '7deg', delay: '-6s' },
+  },
+  {
+    id: 'ursa-minor', name: '小熊座', en: 'URSA MINOR', zone: 'reading', bright: [0,6],
+    points: [[10,18],[24,28],[38,38],[54,50],[72,43],[88,55],[76,73]],
+    lines: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,3]],
+    position: { left: '78%', top: '62%', width: '175px', rotate: '-12deg', delay: '-9s' },
+  },
+  {
+    id: 'cygnus', name: '天鹅座', en: 'CYGNUS', zone: 'selection', bright: [0,3,5],
+    points: [[50,6],[49,29],[49,51],[49,76],[48,94],[14,47],[82,55]],
+    lines: [[0,1],[1,2],[2,3],[3,4],[5,2],[2,6]],
+    position: { left: '5%', top: '50%', width: '205px', rotate: '13deg', delay: '-4s' },
+  },
+  {
+    id: 'pegasus', name: '飞马座', en: 'PEGASUS', zone: 'selection', bright: [0,1,2,3],
+    points: [[15,18],[77,13],[83,70],[21,78],[6,48],[95,38],[62,91]],
+    lines: [[0,1],[1,2],[2,3],[3,0],[0,4],[1,5],[3,6]],
+    position: { left: '72%', top: '18%', width: '245px', rotate: '-5deg', delay: '-8s' },
+  },
+  {
+    id: 'lyra', name: '天琴座', en: 'LYRA', zone: 'daily', bright: [0],
+    points: [[19,10],[42,36],[76,32],[70,76],[35,81]],
+    lines: [[0,1],[1,2],[2,3],[3,4],[4,1]],
+    position: { left: '5%', top: '18%', width: '170px', rotate: '-11deg', delay: '-3s' },
+  },
+  {
+    id: 'aquila', name: '天鹰座', en: 'AQUILA', zone: 'daily', bright: [3],
+    points: [[9,47],[27,31],[48,45],[55,20],[63,48],[82,33],[94,55],[50,79]],
+    lines: [[0,1],[1,2],[2,3],[2,4],[4,5],[5,6],[2,7]],
+    position: { left: '74%', top: '57%', width: '225px', rotate: '9deg', delay: '-7s' },
+  },
+  {
+    id: 'cassiopeia', name: '仙后座', en: 'CASSIOPEIA', zone: 'library', bright: [0,2,4],
+    points: [[6,29],[27,66],[49,25],[71,69],[94,31]],
+    lines: [[0,1],[1,2],[2,3],[3,4]],
+    position: { left: '4%', top: '14%', width: '230px', rotate: '-7deg', delay: '-5s' },
+  },
+  {
+    id: 'andromeda', name: '仙女座', en: 'ANDROMEDA', zone: 'library', bright: [0,3,6],
+    points: [[7,47],[24,43],[40,50],[55,36],[69,48],[84,35],[95,17],[61,74]],
+    lines: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[3,7]],
+    position: { left: '73%', top: '57%', width: '250px', rotate: '8deg', delay: '-9s' },
+  },
+  {
+    id: 'scorpius', name: '天蝎座', en: 'SCORPIUS', zone: 'history', bright: [0,4,8],
+    points: [[12,12],[20,31],[34,39],[47,50],[60,61],[76,67],[87,78],[79,91],[64,84]],
+    lines: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8]],
+    position: { left: '73%', top: '16%', width: '235px', rotate: '-9deg', delay: '-4s' },
+  },
+];
+
+function ConstellationField({ zone }: { zone: ConstellationZone }) {
+  return <div className={`constellation-field zone-${zone}`} aria-hidden="true">
+    {constellationSpecs.map((constellation) => (
+      <figure
+        className={`constellation-group constellation-${constellation.id} for-${constellation.zone}`}
+        style={{
+          '--constellation-left': constellation.position.left,
+          '--constellation-top': constellation.position.top,
+          '--constellation-width': constellation.position.width,
+          '--constellation-rotate': constellation.position.rotate,
+          '--constellation-delay': constellation.position.delay,
+        } as CSSProperties}
+        key={constellation.id}
+      >
+        <svg viewBox="0 0 100 100" role="presentation">
+          <g className="constellation-lines">
+            {constellation.lines.map(([from,to], index) => <line x1={constellation.points[from][0]} y1={constellation.points[from][1]} x2={constellation.points[to][0]} y2={constellation.points[to][1]} key={`${constellation.id}-line-${index}`} />)}
+          </g>
+          <g className="constellation-stars">
+            {constellation.points.map(([x,y], index) => <circle className={constellation.bright.includes(index) ? 'is-bright' : ''} cx={x} cy={y} r={constellation.bright.includes(index) ? 1.65 : 1.05} key={`${constellation.id}-star-${index}`} />)}
+          </g>
+        </svg>
+        <figcaption><span>{constellation.name}</span><small>{constellation.en}</small></figcaption>
+      </figure>
+    ))}
+  </div>;
+}
+
 const spreadDefinitions: Record<Spread, SpreadDefinition> = {
   single: {
     name: '单牌指引', countLabel: '1张', description: '为此刻抽取一张核心指引牌',
@@ -710,6 +826,8 @@ export default function Home() {
   const [chatError, setChatError] = useState('');
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [chatRemaining, setChatRemaining] = useState(DAILY_CHAT_LIMIT);
+  const [skyMode, setSkyMode] = useState<SkyMode>('auto');
+  const [skyPeriod, setSkyPeriod] = useState<SkyPeriod>('night');
   const fanRef = useRef<HTMLDivElement>(null);
   const fanDragRef = useRef({
     active: false,
@@ -747,6 +865,10 @@ export default function Home() {
         : question.trim() || spread !== 'single'
           ? 1
           : 0;
+  const activeSkyPeriod: SkyPeriod = skyMode === 'night' ? 'night' : skyPeriod;
+  const constellationZone: ConstellationZone = view === 'reading' && (isSelecting || isShuffling || isCentering)
+    ? 'selection'
+    : view;
 
   const subtitle = useMemo(
     () => spreadDefinitions[spread].description,
@@ -813,6 +935,15 @@ export default function Home() {
     } catch {
       setDailyEntries([]);
     }
+  }, []);
+
+  useEffect(() => {
+    const storedMode = localStorage.getItem(SKY_MODE_KEY);
+    if (storedMode === 'auto' || storedMode === 'night') setSkyMode(storedMode);
+    const updatePeriod = () => setSkyPeriod(skyPeriodFor());
+    updatePeriod();
+    const timer = window.setInterval(updatePeriod,60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -1040,6 +1171,13 @@ export default function Home() {
   function showNotice(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2400);
+  }
+
+  function toggleSkyMode() {
+    const nextMode: SkyMode = skyMode === 'auto' ? 'night' : 'auto';
+    setSkyMode(nextMode);
+    localStorage.setItem(SKY_MODE_KEY,nextMode);
+    showNotice(nextMode === 'auto' ? '背景已跟随本地时间' : '背景已固定为夜间星空');
   }
 
   function todayKey() {
@@ -1650,21 +1788,28 @@ export default function Home() {
   }, []);
 
   return (
-    <main className={`min-h-screen overflow-hidden ${isSelecting ? 'selection-active' : ''}`}>
+    <main className={`site-canvas sky-${activeSkyPeriod} min-h-screen overflow-hidden ${isSelecting ? 'selection-active' : ''}`}>
+      <div className="time-sky" aria-hidden="true" />
       <canvas ref={trailRef} className="sky-effects" aria-hidden="true" />
       <div className="stars" aria-hidden="true">
         {twinkleStars.map((style, index) => <span className={`twinkle-star ${index % 9 === 0 ? 'star-cross' : ''}`} style={style} key={`star-${index}`} />)}
       </div>
+      <ConstellationField zone={constellationZone} />
       <header className="site-header">
         <a href="#top" className="brand" aria-label="星契塔罗首页" onClick={() => setView('reading')}>
           <span className="brand-mark">✦</span><span>星契</span><span className="brand-en">TAROT</span>
         </a>
-        <nav className="site-nav" aria-label="主要功能">
-          <button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}><Sunrise aria-hidden="true" />每日塔罗</button>
-          <button className={view === 'reading' ? 'active' : ''} onClick={() => setView('reading')}><MoonStar aria-hidden="true" />抽牌</button>
-          <button className={view === 'library' ? 'active' : ''} onClick={() => setView('library')}><BookOpen aria-hidden="true" />牌库</button>
-          <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />日记</button>
-        </nav>
+        <div className="header-actions">
+          <nav className="site-nav" aria-label="主要功能">
+            <button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}><Sunrise aria-hidden="true" />每日塔罗</button>
+            <button className={view === 'reading' ? 'active' : ''} onClick={() => setView('reading')}><MoonStar aria-hidden="true" />抽牌</button>
+            <button className={view === 'library' ? 'active' : ''} onClick={() => setView('library')}><BookOpen aria-hidden="true" />牌库</button>
+            <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />日记</button>
+          </nav>
+          <button type="button" className="sky-mode-toggle" onClick={toggleSkyMode} aria-pressed={skyMode === 'night'} title={skyMode === 'auto' ? '当前随本地时间变化，点击固定夜间' : '当前固定夜间，点击跟随本地时间'}>
+            <MoonStar aria-hidden="true" /><span>{skyMode === 'auto' ? '自动' : '夜间'}</span>
+          </button>
+        </div>
       </header>
 
       {view === 'reading' && (

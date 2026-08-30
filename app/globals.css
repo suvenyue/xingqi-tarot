@@ -656,6 +656,169 @@ body::before {
 .selection-active .stars::after,
 .selection-active .twinkle-star { animation-play-state: paused; }
 
+/* Time-aware sky and constellation atlas. */
+.site-canvas {
+  --sky-stars-opacity: 1;
+  --sky-constellation-opacity: .43;
+  --sky-line: 225,204,151;
+  isolation: isolate;
+  background: transparent;
+}
+.time-sky {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--time-sky-background);
+  transition: background 4s ease,filter 4s ease;
+}
+.time-sky::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center,transparent 43%,rgba(2,2,9,.34) 100%);
+  transition: opacity 4s ease;
+}
+.sky-dawn {
+  --sky-stars-opacity: .56;
+  --sky-constellation-opacity: .34;
+  --sky-line: 232,195,160;
+  --time-sky-background:
+    radial-gradient(ellipse at 18% 94%,rgba(213,134,101,.24),transparent 43%),
+    radial-gradient(circle at 75% 9%,rgba(96,86,171,.22),transparent 34%),
+    linear-gradient(155deg,#11102a 0%,#28162e 55%,#3b202d 100%);
+}
+.sky-day {
+  --sky-stars-opacity: .28;
+  --sky-constellation-opacity: .22;
+  --sky-line: 186,202,230;
+  --time-sky-background:
+    radial-gradient(ellipse at 78% 5%,rgba(113,143,205,.2),transparent 42%),
+    radial-gradient(circle at 12% 88%,rgba(113,84,166,.16),transparent 38%),
+    linear-gradient(150deg,#0e142b 0%,#17172f 52%,#151022 100%);
+}
+.sky-day .time-sky::after { opacity: .55; }
+.sky-dusk {
+  --sky-stars-opacity: .7;
+  --sky-constellation-opacity: .38;
+  --sky-line: 231,187,164;
+  --time-sky-background:
+    radial-gradient(ellipse at 12% 95%,rgba(180,89,101,.26),transparent 46%),
+    radial-gradient(ellipse at 88% 18%,rgba(126,74,159,.22),transparent 39%),
+    linear-gradient(150deg,#12102a 0%,#2a1530 54%,#30151f 100%);
+}
+.sky-night {
+  --sky-stars-opacity: 1;
+  --sky-constellation-opacity: .45;
+  --sky-line: 225,204,151;
+  --time-sky-background:
+    radial-gradient(circle at 13% 8%,rgba(92,75,177,.19),transparent 28rem),
+    radial-gradient(circle at 88% 24%,rgba(146,67,147,.14),transparent 31rem),
+    radial-gradient(circle at 48% 92%,rgba(139,96,48,.1),transparent 34rem),
+    linear-gradient(145deg,#07050e 0%,#0d0918 47%,#100813 100%);
+}
+.site-canvas > .stars { opacity: var(--sky-stars-opacity); transition: opacity 3s ease; }
+.constellation-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(to bottom,transparent 0,black 9%,black 86%,transparent 100%);
+}
+.constellation-group {
+  position: absolute;
+  left: var(--constellation-left);
+  top: var(--constellation-top);
+  width: var(--constellation-width);
+  margin: 0;
+  opacity: 0;
+  visibility: hidden;
+  transform: rotate(var(--constellation-rotate));
+  transform-origin: center;
+  filter: drop-shadow(0 0 8px rgba(var(--sky-line),.08));
+  transition: opacity 1.4s ease,visibility 1.4s ease;
+}
+.constellation-field.zone-reading .for-reading,
+.constellation-field.zone-selection .for-selection,
+.constellation-field.zone-daily .for-daily,
+.constellation-field.zone-library .for-library,
+.constellation-field.zone-history .for-history {
+  visibility: visible;
+  opacity: var(--sky-constellation-opacity);
+  animation: constellationBreathe 15s ease-in-out var(--constellation-delay) infinite;
+}
+.constellation-group svg { display: block; width: 100%; overflow: visible; }
+.constellation-lines line {
+  stroke: rgba(var(--sky-line),.44);
+  stroke-width: .42;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+.constellation-stars circle {
+  fill: rgba(245,235,211,.88);
+  stroke: rgba(var(--sky-line),.28);
+  stroke-width: .45;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 2px rgba(var(--sky-line),.72));
+}
+.constellation-stars circle.is-bright {
+  fill: #fff3cf;
+  filter: drop-shadow(0 0 4px rgba(var(--sky-line),.9));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: constellationStar 5.8s ease-in-out var(--constellation-delay) infinite;
+}
+.constellation-group figcaption { display: flex; align-items: baseline; gap: 8px; margin-top: -4px; color: rgba(var(--sky-line),.68); text-shadow: 0 0 12px rgba(6,4,14,.8); }
+.constellation-group figcaption span { font: 10px/1 var(--font-serif); letter-spacing: .18em; }
+.constellation-group figcaption small { font-size: 6px; letter-spacing: .24em; opacity: .62; }
+.constellation-scorpius figcaption,.constellation-ursa-minor figcaption { justify-content: flex-end; }
+
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.sky-mode-toggle {
+  min-width: 69px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 11px;
+  border: 1px solid rgba(228,198,129,.13);
+  border-radius: 999px;
+  background: rgba(255,255,255,.028);
+  color: #8f899b;
+  font-size: 9px;
+  cursor: pointer;
+  transition: border-color .2s ease,color .2s ease,background .2s ease;
+}
+.sky-mode-toggle svg { width: 13px; color: #d8b86f; }
+.sky-mode-toggle:hover,.sky-mode-toggle[aria-pressed="true"] { border-color: rgba(228,198,129,.3); background: rgba(228,198,129,.08); color: #ead9b2; }
+
+@keyframes constellationBreathe {
+  0%,100% { transform: translate3d(0,0,0) rotate(var(--constellation-rotate)); filter: drop-shadow(0 0 7px rgba(var(--sky-line),.07)); }
+  50% { transform: translate3d(0,-4px,0) rotate(var(--constellation-rotate)); filter: drop-shadow(0 0 11px rgba(var(--sky-line),.12)); }
+}
+@keyframes constellationStar {
+  0%,100% { opacity: .58; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+
+@media (max-width: 780px) {
+  .constellation-group { width: min(var(--constellation-width),31vw); }
+  .constellation-group figcaption { display: none; }
+  .header-actions { gap: 4px; }
+  .sky-mode-toggle { min-width: 36px; width: 36px; padding: 0; }
+  .sky-mode-toggle span { display: none; }
+}
+
+@media (max-width: 560px) {
+  .site-header { gap: 7px; }
+  .header-actions { min-width: 0; }
+  .sky-mode-toggle { flex: 0 0 31px; width: 31px; min-width: 31px; height: 31px; }
+  .constellation-field { opacity: .72; }
+  .constellation-group { width: min(var(--constellation-width),38vw); }
+}
+
 .moon-journey {
   position: relative;
   z-index: 4;
