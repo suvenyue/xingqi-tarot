@@ -16,6 +16,9 @@ type TarotContext = {
     focus?: string;
   }>;
   synthesis?: string;
+  verdict?: string;
+  connections?: string[];
+  actions?: { doNow?: string; avoid?: string; watch?: string } | null;
   energy?: string;
 };
 
@@ -85,7 +88,10 @@ function contextText(context: TarotContext | undefined) {
     `用户问题：${context?.question?.slice(0, 800) || '未填写，请围绕牌阵本身进行开放式解读'}`,
     `牌阵：${context?.spread?.name || '未知牌阵'}`,
     `当前牌面：\n${lines.join('\n') || '暂无牌面'}`,
+    context?.verdict ? `直接结论：${context.verdict.slice(0, 1200)}` : '',
     context?.synthesis ? `现有综合解读：${context.synthesis.slice(0, 1800)}` : '',
+    Array.isArray(context?.connections) && context.connections.length ? `关键牌组联系：\n${context.connections.slice(0, 7).map((item) => item.slice(0, 900)).join('\n')}` : '',
+    context?.actions ? `行动建议：适合做——${context.actions.doNow?.slice(0, 700) || '无'}；暂时避免——${context.actions.avoid?.slice(0, 700) || '无'}；接下来观察——${context.actions.watch?.slice(0, 700) || '无'}` : '',
     context?.energy ? `能量结构：${context.energy.slice(0, 900)}` : '',
   ].filter(Boolean).join('\n\n');
 }

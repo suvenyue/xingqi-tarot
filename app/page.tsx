@@ -390,7 +390,10 @@ function orientationNote(card: DrawnCard) {
 
 function positionMeaning(card: DrawnCard, position: SpreadPosition) {
   const meaning = card.reversed ? card.reversedMeaning : card.uprightMeaning;
-  return `在“${position.name}”位置，${position.focus}${card.name}进一步说明“${meaning}”。请把位置职责与牌义同时考虑，而不是脱离牌阵单独判断。`;
+  const expression = card.reversed
+    ? '说明这个位置的力量目前更可能以内耗、延迟、回避或过度反应的方式出现'
+    : '说明这个位置的力量已经能够较直接地进入现实，需要通过行动与事实继续验证';
+  return `${card.name}以${card.reversed ? '逆位' : '正位'}落在“${position.name}”，并不是通用牌义的重复。这个位置负责：${position.focus}${expression}。牌面把注意力具体落在“${activeKeywords(card)}”上；结合标准含义来看：${meaning}`;
 }
 
 function domainMeaning(card: DrawnCard, domain: Domain) {
@@ -436,6 +439,118 @@ function synthesisText(drawn: DrawnCard[], spread: Spread) {
   if (spread === 'career') return `职业现状由${drawn[0].name}呈现，优势${drawn[1].name}与机会${drawn[3].name}是可用资源，阻碍${drawn[2].name}和环境${drawn[4].name}说明现实限制；行动牌${drawn[5].name}是改变趋势的关键。${energy}`;
   if (spread === 'celtic') return `凯尔特十字以${drawn[0].name}描述现状，以${drawn[1].name}指出交叉挑战；潜意识根源${drawn[3].name}、外部环境${drawn[7].name}与希望恐惧${drawn[8].name}共同解释为何局面复杂，最终趋势${drawn[9].name}应作为整组牌的综合结果理解。${energy}`;
   return `年度主题由${drawn[0].name}统领，其余十二张牌分别落入十二个生活宫位。大阿卡纳出现于某一宫位时，通常表示该领域是年度重要课题；逆位较多的宫位更需要整理、修正或放慢。${energy}`;
+}
+
+type IntegratedConnection = { title: string; body: string };
+type IntegratedReading = {
+  verdict: string;
+  story: string;
+  axis: [string, string, string];
+  connections: IntegratedConnection[];
+  actions: { doNow: string; avoid: string; watch: string };
+};
+
+function activeKeywords(card: DrawnCard) {
+  return card.reversed ? card.reversed : card.upright;
+}
+
+function cardReference(card: DrawnCard) {
+  return `${card.name}${card.reversed ? '逆位' : '正位'}所代表的“${activeKeywords(card)}”`;
+}
+
+function pairInsight(first: DrawnCard, second: DrawnCard, firstPosition: string, secondPosition: string) {
+  const orientation = first.reversed === second.reversed
+    ? first.reversed
+      ? '两张牌都以逆位出现，说明这组关系主要发生在内在阻力、延迟或尚未说出口的部分。'
+      : '两张牌都以正位出现，说明前后位置之间已有较清晰的传递通道，可以通过现实行动加以验证。'
+    : '一正一逆显示两个位置并不同步：一边已经能够表达，另一边仍在防御、迟疑或调整。';
+  if (first.arcana !== 'minor' && second.arcana !== 'minor') {
+    return `${firstPosition}的${first.name}与${secondPosition}的${second.name}都是大阿卡纳，这不是短暂情绪，而是两项重要人生课题正在互相影响。${orientation}`;
+  }
+  if (first.arcana === 'minor' && second.arcana === 'minor') {
+    if (first.suit === second.suit) return `${firstPosition}与${secondPosition}都由${first.suitLabel}主导，同一种元素被连续强调，“${activeKeywords(first)}”会直接放大或修正“${activeKeywords(second)}”。${orientation}`;
+    const supportive = new Set(['wands-swords','swords-wands','cups-pentacles','pentacles-cups']);
+    const conflicting = new Set(['wands-cups','cups-wands','swords-pentacles','pentacles-swords']);
+    const key = `${first.suit}-${second.suit}`;
+    if (supportive.has(key)) return `${firstPosition}的${first.element}与${secondPosition}的${second.element}能够互相支持：前者提供动力或容器，后者帮助它形成表达与现实结果。${orientation}`;
+    if (conflicting.has(key)) return `${firstPosition}的${first.element}与${secondPosition}的${second.element}节奏相冲，需要在“${activeKeywords(first)}”与“${activeKeywords(second)}”之间作出实际协调。${orientation}`;
+  }
+  return `${firstPosition}的${cardReference(first)}正在影响${secondPosition}的${cardReference(second)}。大阿卡纳提供主课题，小阿卡纳说明它如何落入日常选择。${orientation}`;
+}
+
+function integratedReading(drawn: DrawnCard[], spread: Spread, question: string): IntegratedReading {
+  const structure = readingStructure(drawn, spread);
+  const positions = spreadDefinitions[spread].positions;
+  const reverseNote = structure.reversedCount > drawn.length / 2
+    ? '整组逆位偏多，短期重点是解除内耗与校准判断，而不是强行推动结果。'
+    : structure.reversedCount === 0
+      ? '整组牌均为正位，可用能量较外显，但仍需要以连续行动而不是期待来兑现。'
+      : `牌阵中有${structure.reversedCount}张逆位，推进力量与内在阻力同时存在，真正的转折取决于如何处理卡住的部分。`;
+
+  let verdict = '';
+  if (spread === 'single') {
+    verdict = `${cardReference(drawn[0])}是本次问题的核心：先处理它指出的现实课题，再判断结果，而不是急着寻找绝对的“会”或“不会”。`;
+  } else if (spread === 'three') {
+    verdict = `局面正从${cardReference(drawn[0])}走向${cardReference(drawn[2])}；当前真正能改变方向的是${cardReference(drawn[1])}，所以趋势仍然可以被你的下一步行动修正。`;
+  } else if (spread === 'relationship') {
+    const sync = drawn[0].reversed === drawn[1].reversed
+      ? drawn[0].reversed ? '双方目前都带着未处理的防御或迟疑' : '双方并非完全没有回应空间'
+      : '双方当前的投入方式与表达节奏并不同步';
+    verdict = `这段关系里，${sync}；${drawn[4].name}${drawn[4].reversed ? '逆位' : '正位'}揭示的隐藏议题尚未被真正解决，在${drawn[5].name}所要求的调整出现前，${drawn[6].name}${drawn[6].reversed ? '逆位' : '正位'}显示的趋势不会自动向前发展。`;
+  } else if (spread === 'choice') {
+    const aFriction = drawn.slice(1,4).filter((card) => card.reversed).length;
+    const bFriction = drawn.slice(4,7).filter((card) => card.reversed).length;
+    const comparison = aFriction === bFriction ? '两条路径的阻力数量接近，区别主要在于你愿意承担哪一种代价' : aFriction < bFriction ? '选择A目前阻力较少，但仍需接受它对应的代价' : '选择B目前阻力较少，但仍需接受它对应的代价';
+    verdict = `${drawn[0].name}说明这次决定的真正核心；${comparison}。结果牌不是替你决定，而是在比较两种选择会把你带入怎样的生活。`;
+  } else if (spread === 'career') {
+    verdict = `当前事业的关键不是单纯等待机会：${drawn[2].name}指出主要阻碍，${drawn[3].name}给出可用窗口，而${drawn[5].name}所代表的行动能否落实，将直接决定${drawn[6].name}显示的发展趋势。`;
+  } else if (spread === 'celtic') {
+    verdict = `${drawn[1].name}正在交叉限制${drawn[0].name}所描述的现状；真正的转折来自${drawn[3].name}揭示的深层根源，若继续沿当前路径发展，${drawn[9].name}${drawn[9].reversed ? '逆位提醒结果仍有未完成的阻力' : '正位显示局面具备形成结果的条件'}。`;
+  } else {
+    verdict = `${drawn[0].name}是这一年的总主题；大阿卡纳与逆位集中的宫位会成为全年真正需要投入注意力的领域，而不是十二个宫位平均用力。`;
+  }
+
+  const questionLead = question.trim() ? `针对“${question.trim()}”，` : '从整组牌来看，';
+  const story = `${questionLead}${synthesisText(drawn, spread)} ${structure.majorCount ? `其中${structure.majorCount}张大阿卡纳把问题提升到价值选择、人生阶段或长期模式层面。` : '本次以小阿卡纳为主，改变更多取决于日常沟通、资源与行动方式。'} 主导能量是${structure.dominantLabel}。${reverseNote}`;
+
+  const pairMap: Record<Spread, [number, number][]> = {
+    single: [],
+    three: [[0,1],[1,2]],
+    relationship: [[0,1],[2,3],[4,5],[5,6]],
+    choice: [[1,2],[2,3],[4,5],[5,6],[3,6]],
+    career: [[1,2],[3,4],[5,6]],
+    celtic: [[0,1],[2,3],[4,5],[6,7],[8,9]],
+    year: [[0,1],[0,6],[0,7],[0,10],[0,12]],
+  };
+  const connections: IntegratedConnection[] = pairMap[spread].map(([firstIndex,secondIndex]) => ({
+    title: `${positions[firstIndex].short} × ${positions[secondIndex].short}`,
+    body: pairInsight(drawn[firstIndex], drawn[secondIndex], positions[firstIndex].name, positions[secondIndex].name),
+  }));
+  if (spread === 'single') connections.push({ title: '核心牌与问题', body: `${cardReference(drawn[0])}需要同时从牌义、正逆位和你能够采取的现实行动理解。${drawn[0].message}` });
+  if (structure.repeats.length) connections.push({ title: '重复数字／阶位', body: `${structure.repeats.join('、')}重复出现，说明同一发展阶段正在不同领域反复发生；它比单张牌的偶然性更值得留意。` });
+  if (structure.courts >= 2) {
+    const courtCards = drawn.filter((card) => card.rank && ['侍从','骑士','王后','国王'].includes(card.rank));
+    connections.push({ title: '宫廷牌关系', body: `${courtCards.map((card) => `${card.name}${card.reversed ? '逆位' : '正位'}`).join('、')}同时出现，说明人物立场、沟通成熟度与行动方式是事件的重要变量；需要观察谁在学习、谁在行动、谁在掌控。` });
+  }
+  if (drawn.length > 1) connections.push({ title: '起点 × 结果', body: pairInsight(drawn[0], drawn[drawn.length - 1], positions[0].name, positions[positions.length - 1].name) });
+
+  const actionIndex = spread === 'career' ? 5 : spread === 'relationship' ? 5 : spread === 'celtic' ? 9 : drawn.length - 1;
+  const obstacleIndex = spread === 'relationship' ? 4 : spread === 'career' ? 2 : spread === 'celtic' ? 1 : spread === 'three' ? 1 : 0;
+  const actionCard = drawn[actionIndex];
+  const obstacleCard = drawn[obstacleIndex];
+  const resultCard = drawn[drawn.length - 1];
+
+  return {
+    verdict,
+    story,
+    axis: [drawn[0].name, drawn[Math.floor((drawn.length - 1) / 2)].name, resultCard.name],
+    connections: connections.slice(0,7),
+    actions: {
+      doNow: `${guideFor(actionCard).action} 这一步对应${positions[actionIndex].name}的${actionCard.name}${actionCard.reversed ? '逆位' : '正位'}。`,
+      avoid: `暂时避免让“${activeKeywords(obstacleCard)}”替你作决定。${guideFor(obstacleCard).blindspot}`,
+      watch: `接下来观察现实中是否连续出现与“${activeKeywords(resultCard)}”一致的行动、沟通或资源变化；一次情绪波动不能单独证明趋势已经确定。`,
+    },
+  };
 }
 
 function encodeReading(reading: SavedReading) {
@@ -493,10 +608,12 @@ export default function Home() {
   const holdCompletedRef = useRef(false);
   const spreadInfo = spreadDefinitions[spread];
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
-  const fullSynthesis = drawn.length ? synthesisText(drawn, spread) : '';
-  const oneSentenceSummary = fullSynthesis ? `${fullSynthesis.split('。')[0]}。` : '';
+  const integrated = drawn.length ? integratedReading(drawn, spread, question) : null;
+  const fullSynthesis = integrated?.story || '';
+  const oneSentenceSummary = integrated?.verdict || '';
+  const drawnSignature = drawn.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
   const readingChatKey = drawn.length
-    ? `${spread}|${question.trim()}|${drawn.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-')}`
+    ? `${spread}|${question.trim()}|${drawnSignature}`
     : '';
   const journeyStep = isCentering
     ? 0
@@ -576,7 +693,7 @@ export default function Home() {
       setChatMessages([]);
       setChatStyle('gentle');
     }
-  }, [readingChatKey]);
+  }, [drawnSignature]);
 
   useEffect(() => {
     if (!chatMessages.length) return;
@@ -860,6 +977,9 @@ export default function Home() {
               focus: spreadInfo.positions[index].focus,
             })),
             synthesis: fullSynthesis,
+            verdict: integrated?.verdict || '',
+            connections: integrated?.connections.map((connection) => `${connection.title}：${connection.body}`) || [],
+            actions: integrated?.actions || null,
             energy: structure
               ? `大阿卡纳 ${structure.majorCount}/${drawn.length}；正位 ${drawn.length - structure.reversedCount}，逆位 ${structure.reversedCount}；主导元素 ${structure.dominantLabel}；主线：${structure.mainline}`
               : '',
@@ -974,11 +1094,13 @@ export default function Home() {
   function readingText() {
     if (!drawn.length) return '';
     const structure = readingStructure(drawn, spread);
+    const whole = integratedReading(drawn, spread, question);
     const cardSections = drawn.map((card,index) => {
       const position = spreadInfo.positions[index];
       return `${String(index + 1).padStart(2,'0')} · ${position.name}｜${card.name}（${card.reversed ? '逆位' : '正位'}）\n关键词：${card.reversed ? card.reversed : card.upright}\n${positionMeaning(card, position)}\n爱情：${domainMeaning(card,'love')}\n事业：${domainMeaning(card,'career')}\n财运：${domainMeaning(card,'money')}\n健康：${domainMeaning(card,'health')}`;
     });
-    return `星契 Tarot｜${spreadInfo.name}\n${question ? `问题：${question}\n` : ''}${synthesisText(drawn, spread)}\n\n能量结构：大阿卡纳 ${structure.majorCount}/${drawn.length}，逆位 ${structure.reversedCount}/${drawn.length}，主导元素 ${structure.dominantLabel}。\n主线：${structure.mainline}\n相邻关系：\n${structure.adjacency.join('\n')}\n最终建议：${structure.advice}\n\n${cardSections.join('\n\n')}\n\n塔罗呈现的是当下能量与可能路径，不替代现实证据与专业建议。`;
+    const connectionText = whole.connections.map((connection) => `${connection.title}：${connection.body}`).join('\n');
+    return `星契 Tarot｜${spreadInfo.name}\n${question ? `问题：${question}\n` : ''}\n一句话结论：${whole.verdict}\n\n整体故事：${whole.story}\n\n关键牌组联系：\n${connectionText}\n\n能量结构：大阿卡纳 ${structure.majorCount}/${drawn.length}，逆位 ${structure.reversedCount}/${drawn.length}，主导元素 ${structure.dominantLabel}。\n\n行动建议：\n现在适合做：${whole.actions.doNow}\n暂时避免：${whole.actions.avoid}\n接下来观察：${whole.actions.watch}\n\n牌位解读：\n${cardSections.join('\n\n')}\n\n塔罗呈现的是当下能量与可能路径，不替代现实证据与专业建议。`;
   }
 
   async function copyFullReading() {
@@ -1457,11 +1579,11 @@ export default function Home() {
               <details className="reading-layer layer-summary" open>
                 <summary>
                   <span className="layer-number">01</span>
-                  <div><small>一句话总结</small><strong>{oneSentenceSummary}</strong></div>
+                  <div><small>一句话结论</small><strong>先直接回答问题，再解释为什么</strong></div>
                   <ChevronRight aria-hidden="true" />
                 </summary>
                 <div className="layer-content summary-content">
-                  <p>{fullSynthesis}</p>
+                  <p>{oneSentenceSummary}</p>
                   {question && <blockquote>“{question}”</blockquote>}
                 </div>
               </details>
@@ -1469,10 +1591,17 @@ export default function Home() {
               <details className="reading-layer layer-panorama" open>
                 <summary>
                   <span className="layer-number">02</span>
-                  <div><small>牌阵全景</small><strong>{spreadInfo.name} · {drawn.length} 张牌的位置</strong></div>
+                  <div><small>整组牌的故事</small><strong>先理解主线，再进入每一张牌</strong></div>
                   <ChevronRight aria-hidden="true" />
                 </summary>
                 <div className="layer-content">
+                  {integrated && <div className="integrated-story">
+                    <span>OVERALL READING</span>
+                    <p>{fullSynthesis}</p>
+                    <div className="story-axis" aria-label="牌阵主轴">
+                      <i>{integrated.axis[0]}</i><b>起点</b><span>→</span><i>{integrated.axis[1]}</i><b>转折</b><span>→</span><i>{integrated.axis[2]}</i><b>趋势</b>
+                    </div>
+                  </div>}
                   <div className={`overview-path ${spreadInfo.positions.length > 3 ? 'many' : ''}`}>
                     {spreadInfo.positions.map((position, index) => (
                       <span key={position.name}><b>{String(index + 1).padStart(2, '0')} · {position.short}</b>{drawn[index].name}{drawn[index].reversed ? '（逆位）' : '（正位）'}</span>
@@ -1484,7 +1613,7 @@ export default function Home() {
               <details className="reading-layer layer-cards" open={drawn.length <= 3}>
                 <summary>
                   <span className="layer-number">03</span>
-                  <div><small>逐张牌义</small><strong>逐一查看每张牌的完整标准解读</strong></div>
+                  <div><small>牌位解读</small><strong>用每个位置验证上面的整体结论</strong></div>
                   <ChevronRight aria-hidden="true" />
                 </summary>
                 <div className="layer-content card-readings">
@@ -1551,15 +1680,15 @@ export default function Home() {
                 </div>
               </details>
 
-              {structure && <>
-                <details className="reading-layer layer-relationships">
+              {structure && integrated && <>
+                <details className="reading-layer layer-relationships" open>
                   <summary>
                     <span className="layer-number">04</span>
-                    <div><small>牌与牌之间的关系</small><strong>相邻牌如何互相加强、转折或产生冲突</strong></div>
+                    <div><small>关键牌组联系</small><strong>按「{spreadInfo.name}」的牌位逻辑分析加强、冲突与修正</strong></div>
                     <ChevronRight aria-hidden="true" />
                   </summary>
                   <div className="layer-content relationship-content">
-                    {structure.adjacency.length ? <ol>{structure.adjacency.map((note,index) => <li key={`${index}-${note}`}>{note}</li>)}</ol> : <p>单牌牌阵没有相邻牌关系，这张牌本身就是本次解读的唯一核心。</p>}
+                    <ol>{integrated.connections.map((connection,index) => <li key={`${index}-${connection.title}`}><strong>{connection.title}</strong><p>{connection.body}</p></li>)}</ol>
                   </div>
                 </details>
 
@@ -1580,13 +1709,13 @@ export default function Home() {
                 <details className="reading-layer layer-guidance" open>
                   <summary>
                     <span className="layer-number">06</span>
-                    <div><small>主线与行动建议</small><strong>整合转折点，形成可以带回现实的方向</strong></div>
+                    <div><small>行动建议</small><strong>现在适合做什么、避免什么、观察什么</strong></div>
                     <ChevronRight aria-hidden="true" />
                   </summary>
-                  <div className="layer-content structure-narrative">
-                    <section><span>牌阵主线</span><p>{structure.mainline}</p></section>
-                    <section><span>关键转折</span><p>{structure.adjacency.length ? structure.adjacency[Math.floor(structure.adjacency.length / 2)] : oneSentenceSummary}</p></section>
-                    <section className="structure-advice"><span>最终整合建议</span><p>{structure.advice}</p></section>
+                  <div className="layer-content action-triad">
+                    <section className="action-do"><span>01 · 现在适合做</span><p>{integrated.actions.doNow}</p></section>
+                    <section className="action-avoid"><span>02 · 暂时避免</span><p>{integrated.actions.avoid}</p></section>
+                    <section className="action-watch"><span>03 · 接下来观察</span><p>{integrated.actions.watch}</p></section>
                   </div>
                 </details>
               </>}
