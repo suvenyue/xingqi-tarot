@@ -6,6 +6,7 @@ import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { cardOrigin } from '@/lib/card-origins';
 import { minorCards, minorDomainMeaning, type DeckCard, type Domain } from '@/lib/tarot-deck';
 
 type Spread = 'single' | 'three' | 'celtic' | 'relationship' | 'choice' | 'career' | 'year';
@@ -885,6 +886,7 @@ export default function Home() {
   }), [libraryQuery, libraryFilter]);
 
   const libraryCard = libraryCards.find((card) => card.id === libraryCardId) || libraryCards[0] || cards[0];
+  const libraryOrigin = cardOrigin(libraryCard);
   const dailyDate = localDateKey();
   const todayDailyEntry = dailyEntries.find((entry) => entry.date === dailyDate);
   const todayDailyCard = todayDailyEntry
@@ -2475,6 +2477,18 @@ export default function Home() {
                 <div><span>{libraryCard.arcana === 'minor' ? `${libraryCard.suitLabel} · ${libraryCard.element}` : '大阿卡纳'}</span><h2>{libraryCard.name}</h2><p>{libraryCard.en}</p></div>
               </div>
               <section><h3>图像象征</h3><p>{visualSymbolism(libraryCard)}</p></section>
+              <section className="card-origin-record">
+                <div className="origin-record-heading">
+                  <div><span>ICONOGRAPHIC ORIGIN</span><h3>牌面来源</h3></div>
+                  <em data-confidence={libraryOrigin.confidence}>{libraryOrigin.confidence}</em>
+                </div>
+                <div className="origin-record-meta"><span>{libraryOrigin.period}</span><b>{libraryOrigin.historicalName}</b></div>
+                <div className="origin-record-layers">
+                  <article><b>历史原型</b><p>{libraryOrigin.origin}</p></article>
+                  <article><b>韦特—史密斯的变化</b><p>{libraryOrigin.waiteSmith}</p></article>
+                </div>
+                <small>可信度说明：用于区分馆藏可证的牌名与结构、延续自欧洲艺术的图像传统，以及缺少唯一出处的现代重构。</small>
+              </section>
               <div className="encyclopedia-pair">
                 <section><h3>标准正位</h3><b>{libraryCard.upright}</b><p>{libraryCard.uprightMeaning}</p></section>
                 <section><h3>标准逆位</h3><b>{libraryCard.reversed}</b><p>{libraryCard.reversedMeaning}</p></section>
