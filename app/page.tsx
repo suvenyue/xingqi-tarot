@@ -484,6 +484,7 @@ export default function Home() {
   const [chatRemaining, setChatRemaining] = useState(DAILY_CHAT_LIMIT);
   const fanRef = useRef<HTMLDivElement>(null);
   const trailRef = useRef<HTMLCanvasElement>(null);
+  const interpretationsRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const ritualTimersRef = useRef<number[]>([]);
   const burstTimerRef = useRef<number | null>(null);
@@ -581,6 +582,19 @@ export default function Home() {
     if (!chatMessages.length) return;
     chatEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'nearest' });
   }, [chatMessages.length]);
+
+  useEffect(() => {
+    if (!drawn.length) return;
+    const scrollTimer = window.setTimeout(() => {
+      const readingStart = interpretationsRef.current;
+      if (!readingStart) return;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const headerOffset = window.innerWidth <= 560 ? 78 : 96;
+      const targetTop = readingStart.getBoundingClientRect().top + window.scrollY - headerOffset;
+      window.scrollTo({ top: Math.max(0, targetTop), behavior: reducedMotion ? 'auto' : 'smooth' });
+    }, 380);
+    return () => window.clearTimeout(scrollTimer);
+  }, [readingChatKey]);
 
   useEffect(() => {
     if (!isSelecting || !fanRef.current) return;
@@ -1404,7 +1418,16 @@ export default function Home() {
                 <article
                   className={`tarot-card ${card ? 'revealed' : ''}`}
                   key={card?.id ?? `back-${index}`}
-                  style={{ animationDelay: `${index * 150}ms` }}
+                  style={{
+                    animationDelay: `${index * 150}ms`,
+                    '--float-duration': `${5.4 + (index % 4) * .47}s`,
+                    '--float-delay': `${1.15 + index * .19}s`,
+                    '--float-drift': `${[-1.6,.8,1.35,-.7][index % 4]}px`,
+                    '--float-drift-back': `${[.7,-1.1,-.55,1.2][index % 4]}px`,
+                    '--float-lift': `${-(4.6 + (index % 3) * .8)}px`,
+                    '--float-roll': `${[-.42,.28,.38,-.24][index % 4]}deg`,
+                    '--float-roll-back': `${[.22,-.34,-.2,.3][index % 4]}deg`,
+                  } as CSSProperties}
                   onPointerMove={tiltCard}
                   onPointerLeave={resetCardTilt}
                 >
@@ -1428,7 +1451,7 @@ export default function Home() {
           </div>
 
           {drawn.length > 0 ? (
-            <div className="interpretations">
+            <div className="interpretations" ref={interpretationsRef}>
               {isSharedReading && <div className="shared-reading-banner"><Link2 aria-hidden="true" /><span><b>只读分享解读</b>你正在查看由分享链接还原的牌阵；它不会自动写入你的历史记录。</span></div>}
               <details className="reading-layer layer-summary" open>
                 <summary>
