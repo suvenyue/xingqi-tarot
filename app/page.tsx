@@ -247,7 +247,7 @@ const majorHealth = [
   '代表一个康复或训练周期的完成与整体整合；做好收尾、复查和后续维护。',
 ];
 
-type DrawnCard = TarotCard & { reversed: boolean };
+type DrawnCard = Omit<TarotCard, 'reversed'> & { reversed: boolean; reversedKeywords: string };
 type AppView = 'reading' | 'library' | 'history';
 type LibraryFilter = 'all' | 'major' | 'wands' | 'cups' | 'swords' | 'pentacles' | 'court';
 type SavedReading = {
@@ -267,6 +267,11 @@ type ChatMessage = {
 };
 type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
 
+function withOrientation(card: TarotCard, reversed: boolean): DrawnCard {
+  const { reversed: reversedKeywords, ...cardData } = card;
+  return { ...cardData, reversedKeywords, reversed };
+}
+
 const HISTORY_KEY = 'xingqi-tarot-readings-v1';
 const AI_CHAT_KEY = 'xingqi-tarot-ai-chats-v1';
 const AI_USAGE_KEY = 'xingqi-tarot-ai-usage-v1';
@@ -278,7 +283,7 @@ const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string
   direct: { name: '直言提醒', note: '坦率指出矛盾、盲点和代价', symbol: '↗' },
 };
 
-function cardImagePath(card: TarotCard) {
+function cardImagePath(card: Pick<TarotCard, 'id' | 'arcana' | 'suit'>) {
   if (card.arcana !== 'minor') return `/cards/major-${String(card.id).padStart(2, '0')}.webp`;
   const suitIndex = ((card.id - 22) % 14) + 1;
   return `/cards/${card.suit}-${String(suitIndex).padStart(2, '0')}.webp`;
@@ -384,7 +389,7 @@ function readingStructure(drawn: DrawnCard[], spread: Spread) {
 
 function orientationNote(card: DrawnCard) {
   return card.reversed
-    ? `这张牌以逆位出现，能量更可能表现为内在阻力、延迟或过度使用。关键词是“${card.reversed}”。它不是坏结果，而是在提醒你：先看见卡住能量的方式，再谈下一步。`
+    ? `这张牌以逆位出现，能量更可能表现为内在阻力、延迟或过度使用。关键词是“${card.reversedKeywords}”。它不是坏结果，而是在提醒你：先看见卡住能量的方式，再谈下一步。`
     : `这张牌以正位出现，核心力量正在较顺畅地表达。关键词是“${card.upright}”。它不保证事情自动成功，但说明你可以主动使用这份能量来推动局面。`;
 }
 
@@ -397,11 +402,11 @@ function positionMeaning(card: DrawnCard, position: SpreadPosition) {
 }
 
 function domainMeaning(card: DrawnCard, domain: Domain) {
-  if (card.arcana === 'minor') return minorDomainMeaning(card as DeckCard, domain, card.reversed);
+  if (card.arcana === 'minor') return minorDomainMeaning({ ...card, reversed: card.reversedKeywords } as DeckCard, domain, card.reversed);
   const guide = cardGuides[card.id];
   const base = domain === 'health' ? majorHealth[card.id] : guide[domain];
   return card.reversed
-    ? `${base} 逆位时，尤其要留意“${card.reversed}”如何让这一领域出现延迟、内耗或过度反应。`
+    ? `${base} 逆位时，尤其要留意“${card.reversedKeywords}”如何让这一领域出现延迟、内耗或过度反应。`
     : `${base} 正位时，可借助“${card.upright}”把理解转成稳健行动。`;
 }
 
@@ -413,17 +418,17 @@ function guideFor(card: DrawnCard): CardGuide {
     money: domainMeaning(card, 'money'),
     health: domainMeaning(card, 'health'),
     blindspot: card.reversed
-      ? `主要盲点是“${card.reversed}”。逆位并不自动等于坏结果，它更常指出能量受阻、内化、延迟或被使用过度。`
+      ? `主要盲点是“${card.reversedKeywords}”。逆位并不自动等于坏结果，它更常指出能量受阻、内化、延迟或被使用过度。`
       : `正位的优势是“${card.upright}”，但任何优势推到极端都会形成盲点；请确认行动仍符合现实条件。`,
     action: `${card.message} 先选择一个能在七天内完成、且可以观察结果的具体步骤。`,
-    reflect: `“${card.reversed ? card.reversed : card.upright}”正在我的现实中以什么方式出现？`,
+    reflect: `“${card.reversed ? card.reversedKeywords : card.upright}”正在我的现实中以什么方式出现？`,
   };
 }
 
 function synthesisText(drawn: DrawnCard[], spread: Spread) {
   if (drawn.length === 1) {
     const card = drawn[0];
-    return `${card.name}把焦点放在“${card.reversed ? card.reversed : card.upright}”上。此刻最重要的不是追问一个绝对结果，而是辨认你能改变的部分，并用一次具体行动验证牌面给出的提醒。`;
+    return `${card.name}把焦点放在“${card.reversed ? card.reversedKeywords : card.upright}”上。此刻最重要的不是追问一个绝对结果，而是辨认你能改变的部分，并用一次具体行动验证牌面给出的提醒。`;
   }
 
   const reversedCount = drawn.filter((card) => card.reversed).length;
@@ -451,7 +456,7 @@ type IntegratedReading = {
 };
 
 function activeKeywords(card: DrawnCard) {
-  return card.reversed ? card.reversed : card.upright;
+  return card.reversed ? card.reversedKeywords : card.upright;
 }
 
 function cardReference(card: DrawnCard) {
@@ -656,7 +661,7 @@ export default function Home() {
     if (!shared || !spreadDefinitions[shared.spread]) return;
     const restored = shared.cards.map((entry) => {
       const card = cards.find((item) => item.id === entry.id);
-      return card ? { ...card, reversed: Boolean(entry.reversed) } : null;
+      return card ? withOrientation(card, Boolean(entry.reversed)) : null;
     }).filter(Boolean) as DrawnCard[];
     if (restored.length !== spreadDefinitions[shared.spread].positions.length) return;
     setSpread(shared.spread);
@@ -973,7 +978,7 @@ export default function Home() {
               name: card.name,
               orientation: card.reversed ? '逆位' : '正位',
               position: spreadInfo.positions[index].name,
-              keywords: card.reversed ? card.reversed : card.upright,
+              keywords: card.reversed ? card.reversedKeywords : card.upright,
               focus: spreadInfo.positions[index].focus,
             })),
             synthesis: fullSynthesis,
@@ -1072,7 +1077,7 @@ export default function Home() {
   function restoreReading(record: SavedReading) {
     const restored = record.cards.map((entry) => {
       const card = cards.find((item) => item.id === entry.id);
-      return card ? { ...card, reversed: entry.reversed } : null;
+      return card ? withOrientation(card, entry.reversed) : null;
     }).filter(Boolean) as DrawnCard[];
     if (restored.length !== spreadDefinitions[record.spread].positions.length) return;
     setSpread(record.spread);
@@ -1097,7 +1102,7 @@ export default function Home() {
     const whole = integratedReading(drawn, spread, question);
     const cardSections = drawn.map((card,index) => {
       const position = spreadInfo.positions[index];
-      return `${String(index + 1).padStart(2,'0')} · ${position.name}｜${card.name}（${card.reversed ? '逆位' : '正位'}）\n关键词：${card.reversed ? card.reversed : card.upright}\n${positionMeaning(card, position)}\n爱情：${domainMeaning(card,'love')}\n事业：${domainMeaning(card,'career')}\n财运：${domainMeaning(card,'money')}\n健康：${domainMeaning(card,'health')}`;
+      return `${String(index + 1).padStart(2,'0')} · ${position.name}｜${card.name}（${card.reversed ? '逆位' : '正位'}）\n关键词：${card.reversed ? card.reversedKeywords : card.upright}\n${positionMeaning(card, position)}\n爱情：${domainMeaning(card,'love')}\n事业：${domainMeaning(card,'career')}\n财运：${domainMeaning(card,'money')}\n健康：${domainMeaning(card,'health')}`;
     });
     const connectionText = whole.connections.map((connection) => `${connection.title}：${connection.body}`).join('\n');
     return `星契 Tarot｜${spreadInfo.name}\n${question ? `问题：${question}\n` : ''}\n一句话结论：${whole.verdict}\n\n整体故事：${whole.story}\n\n关键牌组联系：\n${connectionText}\n\n能量结构：大阿卡纳 ${structure.majorCount}/${drawn.length}，逆位 ${structure.reversedCount}/${drawn.length}，主导元素 ${structure.dominantLabel}。\n\n行动建议：\n现在适合做：${whole.actions.doNow}\n暂时避免：${whole.actions.avoid}\n接下来观察：${whole.actions.watch}\n\n牌位解读：\n${cardSections.join('\n\n')}\n\n塔罗呈现的是当下能量与可能路径，不替代现实证据与专业建议。`;
@@ -1191,7 +1196,7 @@ export default function Home() {
 
   function shuffledDeck() {
     const shuffledCards = secureShuffle(cards);
-    return shuffledCards.map((card) => ({ ...card, reversed: secureRandomIndex(2) === 1 }));
+    return shuffledCards.map((card) => withOrientation(card, secureRandomIndex(2) === 1));
   }
 
   function clearRitualTimers() {
@@ -1626,7 +1631,7 @@ export default function Home() {
                     <span>{String(index + 1).padStart(2, '0')} · {spreadInfo.positions[index].name}</span>
                     <strong>{card.name} · {card.reversed ? '逆位' : '正位'} <small>{card.arcana === 'minor' ? `${card.suitLabel}／${card.element}` : '大阿卡纳'}</small></strong>
                   </div>
-                  <p className="keywords">{card.reversed ? card.reversed : card.upright}</p>
+                  <p className="keywords">{card.reversed ? card.reversedKeywords : card.upright}</p>
                   <span className="summary-hint">展开详细释义</span>
                   </summary>
 
@@ -1865,14 +1870,14 @@ export default function Home() {
                 <section><h3>标准逆位</h3><b>{libraryCard.reversed}</b><p>{libraryCard.reversedMeaning}</p></section>
               </div>
               <section><h3>爱情、事业、财运与健康</h3><div className="encyclopedia-domains">
-                <p><b>爱情</b>{domainMeaning({ ...libraryCard, reversed: false },'love')}</p>
-                <p><b>事业</b>{domainMeaning({ ...libraryCard, reversed: false },'career')}</p>
-                <p><b>财运</b>{domainMeaning({ ...libraryCard, reversed: false },'money')}</p>
-                <p><b>健康</b>{domainMeaning({ ...libraryCard, reversed: false },'health')}</p>
+                <p><b>爱情</b>{domainMeaning(withOrientation(libraryCard, false),'love')}</p>
+                <p><b>事业</b>{domainMeaning(withOrientation(libraryCard, false),'career')}</p>
+                <p><b>财运</b>{domainMeaning(withOrientation(libraryCard, false),'money')}</p>
+                <p><b>健康</b>{domainMeaning(withOrientation(libraryCard, false),'health')}</p>
               </div></section>
               <section><h3>不同牌阵位置</h3><div className="position-examples">
                 {[spreadDefinitions.three.positions[0],spreadDefinitions.celtic.positions[1],spreadDefinitions.career.positions[5],spreadDefinitions.relationship.positions[6]].map((position) => (
-                  <p key={position.name}><b>{position.name}</b>{positionMeaning({ ...libraryCard, reversed: false },position)}</p>
+                  <p key={position.name}><b>{position.name}</b>{positionMeaning(withOrientation(libraryCard, false),position)}</p>
                 ))}
               </div></section>
               <section><h3>常见组合牌义</h3><ul>{combinationMeanings(libraryCard).map((meaning) => <li key={meaning}>{meaning}</li>)}</ul></section>
