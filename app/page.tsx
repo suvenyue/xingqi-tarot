@@ -1700,7 +1700,10 @@ export default function Home() {
   }
 
   function beginFanDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    // Touch devices use the browser's momentum scrolling. Keeping the custom
+    // pointer drag mouse-only avoids Safari treating the card buttons as a
+    // captured gesture and blocking horizontal swipes.
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
     const fan = event.currentTarget;
     fanDragRef.current = {
       active: true,
