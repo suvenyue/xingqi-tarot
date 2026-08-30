@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Sunrise, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -286,8 +286,14 @@ const majorHealth = [
 ];
 
 type DrawnCard = Omit<TarotCard, 'reversed'> & { reversed: boolean; reversedKeywords: string };
-type AppView = 'reading' | 'library' | 'history';
+type AppView = 'daily' | 'reading' | 'library' | 'history';
 type LibraryFilter = 'all' | 'major' | 'wands' | 'cups' | 'swords' | 'pentacles' | 'court';
+type DiaryNotes = {
+  initial?: string;
+  outcome?: string;
+  reflection?: string;
+  updatedAt?: number;
+};
 type SavedReading = {
   id: string;
   createdAt: number;
@@ -296,12 +302,17 @@ type SavedReading = {
   cards: { id: number; reversed: boolean }[];
   optionA?: string;
   optionB?: string;
-  notes?: {
-    initial?: string;
-    outcome?: string;
-    reflection?: string;
-    updatedAt?: number;
-  };
+  kind?: 'spread' | 'daily';
+  dailyMood?: string;
+  notes?: DiaryNotes;
+};
+
+type DailyEntry = {
+  date: string;
+  createdAt: number;
+  card: { id: number; reversed: boolean };
+  mood?: string;
+  notes?: DiaryNotes;
 };
 
 type ChatStyle = 'gentle' | 'analytical' | 'intuitive' | 'direct';
@@ -321,8 +332,11 @@ function withOrientation(card: TarotCard, reversed: boolean): DrawnCard {
 const HISTORY_KEY = 'xingqi-tarot-readings-v1';
 const AI_CHAT_KEY = 'xingqi-tarot-ai-chats-v1';
 const AI_USAGE_KEY = 'xingqi-tarot-ai-usage-v1';
+const DAILY_TAROT_KEY = 'xingqi-tarot-daily-v1';
 const DAILY_CHAT_LIMIT = 8;
 const MAX_HISTORY_ITEMS = 120;
+const MAX_DAILY_ITEMS = 366;
+const dailyMoods = ['平静','轻盈','专注','疲惫','混乱'] as const;
 const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string }> = {
   gentle: { name: '温柔陪伴', note: '先接住感受，再慢慢梳理', symbol: '☾' },
   analytical: { name: '理性解析', note: '按牌位与证据清晰拆解', symbol: '◇' },
@@ -354,6 +368,28 @@ function parseChoiceQuestion(value: string) {
 function formatDiaryDate(timestamp: number) {
   const date = new Date(timestamp);
   return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function localDateKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+function dateKeyWithOffset(offset: number) {
+  const date = new Date();
+  date.setHours(12,0,0,0);
+  date.setDate(date.getDate() + offset);
+  return localDateKey(date);
+}
+
+function dailyStreak(entries: DailyEntry[]) {
+  const dates = new Set(entries.map((entry) => entry.date));
+  let offset = dates.has(dateKeyWithOffset(0)) ? 0 : -1;
+  let count = 0;
+  while (dates.has(dateKeyWithOffset(offset))) {
+    count += 1;
+    offset -= 1;
+  }
+  return count;
 }
 
 const majorSymbols = [
@@ -656,6 +692,8 @@ export default function Home() {
   const [isShuffling, setIsShuffling] = useState(false);
   const [history, setHistory] = useState<SavedReading[]>([]);
   const [openDiaryId, setOpenDiaryId] = useState<string | null>(null);
+  const [dailyEntries, setDailyEntries] = useState<DailyEntry[]>([]);
+  const [isDailyRevealing, setIsDailyRevealing] = useState(false);
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
   const [libraryCardId, setLibraryCardId] = useState(0);
@@ -725,6 +763,22 @@ export default function Home() {
   }), [libraryQuery, libraryFilter]);
 
   const libraryCard = libraryCards.find((card) => card.id === libraryCardId) || libraryCards[0] || cards[0];
+  const dailyDate = localDateKey();
+  const todayDailyEntry = dailyEntries.find((entry) => entry.date === dailyDate);
+  const todayDailyCard = todayDailyEntry
+    ? (() => {
+        const card = cards.find((item) => item.id === todayDailyEntry.card.id);
+        return card ? withOrientation(card, todayDailyEntry.card.reversed) : null;
+      })()
+    : null;
+  const recentDailyEntries = [...dailyEntries].sort((first, second) => second.date.localeCompare(first.date)).slice(0,7);
+  const currentMonthEntries = dailyEntries.filter((entry) => entry.date.startsWith(dailyDate.slice(0,7)));
+  const currentMonthReversed = currentMonthEntries.filter((entry) => entry.card.reversed).length;
+  const currentDailyStreak = dailyStreak(dailyEntries);
+  const todayDailyGuide = todayDailyCard ? guideFor(todayDailyCard) : null;
+  const todayDailyMeaning = todayDailyCard
+    ? (todayDailyCard.reversed ? todayDailyCard.reversedMeaning : todayDailyCard.uprightMeaning)
+    : '';
 
   useEffect(() => {
     try {
@@ -750,6 +804,15 @@ export default function Home() {
     setDrawn(restored);
     setIsSharedReading(true);
     setView('reading');
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(DAILY_TAROT_KEY) || '[]') as DailyEntry[];
+      setDailyEntries(Array.isArray(stored) ? stored.slice(0,MAX_DAILY_ITEMS) : []);
+    } catch {
+      setDailyEntries([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -980,8 +1043,7 @@ export default function Home() {
   }
 
   function todayKey() {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return localDateKey();
   }
 
   function saveChat(messages: ChatMessage[], style = chatStyle) {
@@ -1221,6 +1283,86 @@ export default function Home() {
       const next = current.map((item) => item.id === id ? {
         ...item,
         notes: { ...item.notes, [field]: value, updatedAt: Date.now() },
+      } : item);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    if (id.startsWith('daily-')) {
+      const date = id.slice(6);
+      setDailyEntries((current) => {
+        const next = current.map((entry) => entry.date === date ? {
+          ...entry,
+          notes: { ...entry.notes, [field]: value, updatedAt: Date.now() },
+        } : entry);
+        localStorage.setItem(DAILY_TAROT_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+  }
+
+  function drawDailyCard() {
+    if (todayDailyEntry || isDailyRevealing) return;
+    const card = cards[secureRandomIndex(cards.length)];
+    const reversed = secureRandomIndex(2) === 1;
+    const createdAt = Date.now();
+    const entry: DailyEntry = {
+      date: dailyDate,
+      createdAt,
+      card: { id: card.id, reversed },
+    };
+    const record: SavedReading = {
+      id: `daily-${dailyDate}`,
+      createdAt,
+      question: '今天我最需要留意什么？',
+      spread: 'single',
+      kind: 'daily',
+      cards: [{ id: card.id, reversed }],
+    };
+    setIsDailyRevealing(true);
+    setDailyEntries((current) => {
+      if (current.some((item) => item.date === dailyDate)) return current;
+      const next = [entry, ...current].slice(0,MAX_DAILY_ITEMS);
+      localStorage.setItem(DAILY_TAROT_KEY, JSON.stringify(next));
+      return next;
+    });
+    setHistory((current) => {
+      if (current.some((item) => item.id === record.id)) return current;
+      const next = [record, ...current].slice(0,MAX_HISTORY_ITEMS);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    window.setTimeout(() => setIsDailyRevealing(false), 900);
+  }
+
+  function updateDailyMood(mood: string) {
+    if (!todayDailyEntry) return;
+    setDailyEntries((current) => {
+      const next = current.map((entry) => entry.date === dailyDate ? { ...entry, mood } : entry);
+      localStorage.setItem(DAILY_TAROT_KEY, JSON.stringify(next));
+      return next;
+    });
+    setHistory((current) => {
+      const next = current.map((item) => item.id === `daily-${dailyDate}` ? { ...item, dailyMood: mood } : item);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function updateDailyNote(field: 'initial' | 'outcome' | 'reflection', value: string) {
+    if (!todayDailyEntry) return;
+    const updatedAt = Date.now();
+    setDailyEntries((current) => {
+      const next = current.map((entry) => entry.date === dailyDate ? {
+        ...entry,
+        notes: { ...entry.notes, [field]: value, updatedAt },
+      } : entry);
+      localStorage.setItem(DAILY_TAROT_KEY, JSON.stringify(next));
+      return next;
+    });
+    setHistory((current) => {
+      const next = current.map((item) => item.id === `daily-${dailyDate}` ? {
+        ...item,
+        notes: { ...item.notes, [field]: value, updatedAt },
       } : item);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
       return next;
@@ -1518,6 +1660,7 @@ export default function Home() {
           <span className="brand-mark">✦</span><span>星契</span><span className="brand-en">TAROT</span>
         </a>
         <nav className="site-nav" aria-label="主要功能">
+          <button className={view === 'daily' ? 'active' : ''} onClick={() => setView('daily')}><Sunrise aria-hidden="true" />每日塔罗</button>
           <button className={view === 'reading' ? 'active' : ''} onClick={() => setView('reading')}><MoonStar aria-hidden="true" />抽牌</button>
           <button className={view === 'library' ? 'active' : ''} onClick={() => setView('library')}><BookOpen aria-hidden="true" />牌库</button>
           <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />日记</button>
@@ -1538,6 +1681,87 @@ export default function Home() {
       )}
 
       {notice && <div className="site-notice" role="status">{notice}</div>}
+      {view === 'daily' && (
+        <section className="daily-shell" id="daily">
+          <div className="daily-heading">
+            <div>
+              <p className="eyebrow"><span /> ONE CARD FOR TODAY</p>
+              <h1>每日塔罗</h1>
+              <p>每天只抽一张牌。它不会替你决定今天，而是帮你看见值得留意的情绪、行动与现实信号。</p>
+            </div>
+            <div className="daily-date-seal"><span>{dailyDate.slice(5).replace('-','.')}</span><small>{dailyDate.slice(0,4)}</small></div>
+          </div>
+
+          <div className="daily-stats" aria-label="每日塔罗记录">
+            <div><b>{currentDailyStreak}</b><span>连续记录</span></div>
+            <div><b>{currentMonthEntries.length}</b><span>本月牌数</span></div>
+            <div><b>{currentMonthReversed}</b><span>本月逆位</span></div>
+          </div>
+
+          {!todayDailyCard ? (
+            <div className="daily-draw-panel">
+              <div className="daily-orbit" aria-hidden="true"><i /><i /><span>☾</span></div>
+              <p>安静几秒，想一想：今天我最需要留意什么？</p>
+              <button type="button" className="daily-deck-button" onClick={drawDailyCard} disabled={isDailyRevealing} aria-label="抽取今天的塔罗牌">
+                <span className="daily-card-back"><i>☀</i><b>✦</b><i>☾</i></span>
+                <strong>{isDailyRevealing ? '正在翻开…' : '抽取今日之牌'}</strong>
+              </button>
+              <small>牌面采用完整78张韦特体系 · 正逆位各50% · 今天抽出后不可重抽</small>
+            </div>
+          ) : (
+            <div className={`daily-reading ${isDailyRevealing ? 'is-revealing' : ''}`} aria-live="polite">
+              <div className="daily-card-column">
+                <p>YOUR CARD OF THE DAY</p>
+                <div className={`daily-card-image ${todayDailyCard.reversed ? 'is-reversed' : ''}`}>
+                  <img src={cardImagePath(todayDailyCard)} alt={`${todayDailyCard.name}${todayDailyCard.reversed ? '逆位' : '正位'}牌面`} />
+                </div>
+                <span>{todayDailyCard.reversed ? '逆位' : '正位'}</span>
+              </div>
+              <div className="daily-reading-copy">
+                <p className="daily-reading-date">{dailyDate.replaceAll('-','.')} · 今日主题</p>
+                <h2>{todayDailyCard.name}</h2>
+                <p className="daily-keywords">{todayDailyCard.reversed ? todayDailyCard.reversedKeywords : todayDailyCard.upright}</p>
+                <blockquote>{todayDailyMeaning}</blockquote>
+                <div className="daily-guidance-grid">
+                  <section><span>今天适合</span><p>{todayDailyGuide?.action}</p></section>
+                  <section><span>暂时避免</span><p>{todayDailyGuide?.blindspot}</p></section>
+                  <section><span>留意信号</span><p>{todayDailyGuide?.reflect}</p></section>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {todayDailyCard && <>
+            <section className="daily-domains">
+              <div className="daily-section-title"><span>01</span><div><h2>今天的四个生活提醒</h2><p>同一张牌进入不同生活领域，会呈现不同的观察重点。</p></div></div>
+              <div>
+                <article><span>爱情与关系</span><p>{domainMeaning(todayDailyCard,'love')}</p></article>
+                <article><span>事业与学业</span><p>{domainMeaning(todayDailyCard,'career')}</p></article>
+                <article><span>财运与资源</span><p>{domainMeaning(todayDailyCard,'money')}</p></article>
+                <article><span>健康与身心</span><p>{domainMeaning(todayDailyCard,'health')}</p></article>
+              </div>
+            </section>
+
+            <section className="daily-reflection">
+              <div className="daily-section-title"><span>02</span><div><h2>把今天留在日记里</h2><p>可以现在写第一感受，也可以晚上回来补充。内容会自动保存到当前设备。</p></div></div>
+              <div className="daily-mood-row"><span>此刻状态</span><div>{dailyMoods.map((mood) => <button type="button" className={todayDailyEntry?.mood === mood ? 'active' : ''} onClick={() => updateDailyMood(mood)} key={mood}>{mood}</button>)}</div></div>
+              <div className="daily-note-grid">
+                <label htmlFor="daily-note-initial"><span>第一感受</span><small>看到这张牌时，脑中最先出现了什么？</small><Textarea id="daily-note-initial" value={todayDailyEntry?.notes?.initial || ''} maxLength={800} onChange={(event) => updateDailyNote('initial',event.target.value)} placeholder="不必解释，先记下最直接的感觉……" /></label>
+                <label htmlFor="daily-note-outcome"><span>今天发生了什么</span><small>现实中出现了哪些与牌面呼应或相反的信号？</small><Textarea id="daily-note-outcome" value={todayDailyEntry?.notes?.outcome || ''} maxLength={800} onChange={(event) => updateDailyNote('outcome',event.target.value)} placeholder="晚上回来，写下今天真实发生的事……" /></label>
+                <label htmlFor="daily-note-reflection"><span>现在回看</span><small>这张牌真正提醒你的，也许是什么？</small><Textarea id="daily-note-reflection" value={todayDailyEntry?.notes?.reflection || ''} maxLength={800} onChange={(event) => updateDailyNote('reflection',event.target.value)} placeholder="我现在对今天有了怎样不同的理解……" /></label>
+              </div>
+            </section>
+          </>}
+
+          <section className="daily-recent">
+            <div className="daily-section-title"><span>03</span><div><h2>最近七天</h2><p>{recentDailyEntries.length ? '观察重复出现的牌、花色与正逆位，而不是只看单日结果。' : '抽出第一张每日牌后，时间轨迹会从这里开始。'}</p></div></div>
+            {recentDailyEntries.length ? <div className="daily-week-strip">{recentDailyEntries.map((entry) => {
+              const card = cards.find((item) => item.id === entry.card.id);
+              return card ? <button type="button" onClick={() => setView('history')} key={entry.date}><small>{entry.date.slice(5).replace('-','.')}</small><span className={entry.card.reversed ? 'is-reversed' : ''}><img src={cardImagePath(card)} alt="" /></span><b>{card.name}</b><i>{entry.card.reversed ? '逆位' : '正位'}</i></button> : null;
+            })}</div> : <div className="daily-week-empty">七日星轨尚未点亮</div>}
+          </section>
+        </section>
+      )}
       {view === 'reading' && (
       <section id="top" className={`reading-shell ${isSelecting ? 'selecting-mode' : ''}`}>
         {isCentering && (
@@ -2109,14 +2333,15 @@ export default function Home() {
               const ageDays = Math.max(0, Math.floor((Date.now() - record.createdAt) / 86400000));
               const noteCount = [record.notes?.initial, record.notes?.outcome, record.notes?.reflection].filter((note) => note?.trim()).length;
               const isOpen = openDiaryId === record.id;
+              const isDailyRecord = record.kind === 'daily';
               return <article key={record.id} className={`history-item diary-entry ${isOpen ? 'open' : ''}`}>
                 <div className="diary-overview">
                   <div className="history-card-stack">{previewCards.map((card,index) => <img key={`${record.id}-${card.id}`} src={cardImagePath(card)} alt="" style={{ transform: `translateX(${index * 24}px) rotate(${(index - 2) * 3}deg)` }} />)}</div>
                   <div className="history-copy">
                     <span>{formatDiaryDate(record.createdAt)}</span>
-                    <h2>{definition.name}</h2>
+                    <h2>{isDailyRecord ? '每日塔罗' : definition.name}</h2>
                     <p className="diary-question">{record.question || '这次没有写下问题'}</p>
-                    <div className="diary-meta"><small>{record.cards.length} 张牌</small><small>{noteCount ? `已写 ${noteCount}/3 段笔记` : '等待写下感受'}</small>{ageDays > 0 && <small>距今 {ageDays} 天</small>}</div>
+                    <div className="diary-meta"><small>{isDailyRecord ? '今日单牌' : `${record.cards.length} 张牌`}</small>{record.dailyMood && <small>状态 · {record.dailyMood}</small>}<small>{noteCount ? `已写 ${noteCount}/3 段笔记` : '等待写下感受'}</small>{ageDays > 0 && <small>距今 {ageDays} 天</small>}</div>
                   </div>
                   <div className="history-actions">
                     <Button onClick={() => restoreReading(record)}>打开完整解读</Button>
@@ -2128,11 +2353,11 @@ export default function Home() {
                 {isOpen && <div className="diary-details">
                   {ageDays >= 30 && !record.notes?.reflection?.trim() && <div className="diary-return-prompt"><span>☾</span><div><b>这次占卜已经过去 {ageDays} 天</b><p>当时看不清的部分，现在也许已经有了答案。要回来看看吗？</p></div></div>}
                   <div className="diary-spread-review">
-                    <div className="diary-subheading"><span>01</span><div><b>当时抽到的牌</b><small>按「{definition.name}」的位置顺序</small></div></div>
+                    <div className="diary-subheading"><span>01</span><div><b>当时抽到的牌</b><small>{isDailyRecord ? '这一天的核心提醒' : `按「${definition.name}」的位置顺序`}</small></div></div>
                     <ol>{record.cards.map((entry, index) => {
                       const card = cards.find((item) => item.id === entry.id);
                       const position = definition.positions[index];
-                      return card ? <li key={`${record.id}-diary-${entry.id}`}><span>{String(index + 1).padStart(2,'0')}</span><div><small>{position?.name || `第 ${index + 1} 张`}</small><b>{card.name} · {entry.reversed ? '逆位' : '正位'}</b></div></li> : null;
+                      return card ? <li key={`${record.id}-diary-${entry.id}`}><span>{String(index + 1).padStart(2,'0')}</span><div><small>{isDailyRecord ? '今日指引' : (position?.name || `第 ${index + 1} 张`)}</small><b>{card.name} · {entry.reversed ? '逆位' : '正位'}</b></div></li> : null;
                     })}</ol>
                   </div>
                   <div className="diary-note-section">
