@@ -603,6 +603,14 @@ export default function Home() {
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [chatRemaining, setChatRemaining] = useState(DAILY_CHAT_LIMIT);
   const fanRef = useRef<HTMLDivElement>(null);
+  const fanDragRef = useRef({
+    active: false,
+    pointerId: -1,
+    startX: 0,
+    scrollLeft: 0,
+    moved: false,
+    blockClick: false,
+  });
   const trailRef = useRef<HTMLCanvasElement>(null);
   const interpretationsRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -726,7 +734,12 @@ export default function Home() {
 
   useEffect(() => {
     const canvas = trailRef.current;
-    if (!canvas || window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!canvas) return;
+    if (isSelecting) {
+      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const context = canvas.getContext('2d');
     if (!context) return;
 
@@ -886,7 +899,7 @@ export default function Home() {
       document.removeEventListener('visibilitychange', pauseWhenHidden);
       window.cancelAnimationFrame(animationFrame);
     };
-  }, []);
+  }, [isSelecting]);
 
   function showNotice(message: string) {
     setNotice(message);
@@ -1282,6 +1295,47 @@ export default function Home() {
     });
   }
 
+  function beginFanDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const fan = event.currentTarget;
+    fanDragRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      scrollLeft: fan.scrollLeft,
+      moved: false,
+      blockClick: false,
+    };
+    fan.setPointerCapture(event.pointerId);
+    fan.classList.add('is-dragging');
+  }
+
+  function moveFanDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = fanDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    const distance = event.clientX - drag.startX;
+    if (Math.abs(distance) > 4) {
+      drag.moved = true;
+      drag.blockClick = true;
+    }
+    if (!drag.moved) return;
+    event.preventDefault();
+    event.currentTarget.scrollLeft = drag.scrollLeft - distance;
+  }
+
+  function endFanDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = fanDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    drag.active = false;
+    event.currentTarget.classList.remove('is-dragging');
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    window.setTimeout(() => {
+      fanDragRef.current.blockClick = false;
+    }, 0);
+  }
+
   function reshuffleSelection() {
     setSelectedCards([]);
     setSelectionDeck(shuffledDeck());
@@ -1328,7 +1382,7 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="min-h-screen overflow-hidden">
+    <main className={`min-h-screen overflow-hidden ${isSelecting ? 'selection-active' : ''}`}>
       <canvas ref={trailRef} className="sky-effects" aria-hidden="true" />
       <div className="stars" aria-hidden="true">
         {twinkleStars.map((style, index) => <span className={`twinkle-star ${index % 9 === 0 ? 'star-cross' : ''}`} style={style} key={`star-${index}`} />)}
@@ -1428,7 +1482,14 @@ export default function Home() {
               <span><ArrowLeftRight aria-hidden="true" /> 左右滑动或拖动，查看更多牌</span>
             </div>
 
-            <div className="fan-window" ref={fanRef}>
+            <div
+              className="fan-window"
+              ref={fanRef}
+              onPointerDown={beginFanDrag}
+              onPointerMove={moveFanDrag}
+              onPointerUp={endFanDrag}
+              onPointerCancel={endFanDrag}
+            >
               <div className="fan-track" role="group" aria-label="78张塔罗牌背">
                 {selectionDeck.map((card, index) => {
                   const selectedIndex = selectedCards.findIndex((selected) => selected.id === card.id);
@@ -1445,7 +1506,13 @@ export default function Home() {
                       key={`choose-${card.id}`}
                       className={`picker-card ${Math.abs(index - center) <= 17 ? 'fan-animated' : ''} ${isCenterCard ? 'center-card' : ''} ${selectedIndex >= 0 ? 'selected' : ''}`}
                       style={style}
-                      onClick={() => selectCard(card)}
+                      onClick={(event) => {
+                        if (fanDragRef.current.blockClick) {
+                          event.preventDefault();
+                          return;
+                        }
+                        selectCard(card);
+                      }}
                       disabled={selectedIndex >= 0 || selectedCards.length >= spreadInfo.positions.length}
                       aria-label={selectedIndex >= 0 ? `已选择为第${selectedIndex + 1}张牌` : `选择牌背 ${index + 1}`}
                     >
