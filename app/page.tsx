@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerE
 import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { minorCards, minorDomainMeaning, type DeckCard, type Domain } from '@/lib/tarot-deck';
 
@@ -135,6 +136,43 @@ const spreadDefinitions: Record<Spread, SpreadDefinition> = {
     ],
   },
 };
+
+const questionExamples: Record<Exclude<Spread, 'choice'>, string[]> = {
+  single: [
+    '此刻我最需要看见的提醒是什么？',
+    '我应该如何面对眼前的变化？',
+    '今天最值得我关注的能量是什么？',
+  ],
+  three: [
+    '这件事是如何发展到现在的，接下来会走向哪里？',
+    '我目前的处境中，最需要调整的是什么？',
+    '过去的什么经验正在影响我现在的选择？',
+  ],
+  celtic: [
+    '我该如何完整理解并推进目前最困扰我的问题？',
+    '这件事背后的核心阻碍、隐藏因素与发展趋势是什么？',
+    '如果我继续沿着当前方向前进，可能会迎来怎样的结果？',
+  ],
+  relationship: [
+    '我和 TA 目前的关系处于什么状态？',
+    '对方如何看待这段关系？',
+    '未来三个月这段关系可能如何发展？',
+    '我应该如何处理与 TA 的关系？',
+    '这段关系目前最大的阻碍是什么？',
+  ],
+  career: [
+    '我目前职业发展的主要阻碍是什么？',
+    '我是否应该接受这个工作机会？',
+    '接下来三个月工作上应该把重点放在哪里？',
+    '我该如何发挥优势，走出目前的职业停滞？',
+  ],
+  year: [
+    '未来一年最重要的成长主题是什么？',
+    '未来一年我的事业、关系与财务分别需要关注什么？',
+    '这一年我最值得主动把握的机会是什么？',
+  ],
+};
+
 type TarotCard = {
   id: number;
   name: string;
@@ -256,6 +294,14 @@ type SavedReading = {
   question: string;
   spread: Spread;
   cards: { id: number; reversed: boolean }[];
+  optionA?: string;
+  optionB?: string;
+  notes?: {
+    initial?: string;
+    outcome?: string;
+    reflection?: string;
+    updatedAt?: number;
+  };
 };
 
 type ChatStyle = 'gentle' | 'analytical' | 'intuitive' | 'direct';
@@ -276,6 +322,7 @@ const HISTORY_KEY = 'xingqi-tarot-readings-v1';
 const AI_CHAT_KEY = 'xingqi-tarot-ai-chats-v1';
 const AI_USAGE_KEY = 'xingqi-tarot-ai-usage-v1';
 const DAILY_CHAT_LIMIT = 8;
+const MAX_HISTORY_ITEMS = 120;
 const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string }> = {
   gentle: { name: '温柔陪伴', note: '先接住感受，再慢慢梳理', symbol: '☾' },
   analytical: { name: '理性解析', note: '按牌位与证据清晰拆解', symbol: '◇' },
@@ -287,6 +334,26 @@ function cardImagePath(card: Pick<TarotCard, 'id' | 'arcana' | 'suit'>) {
   if (card.arcana !== 'minor') return `/cards/major-${String(card.id).padStart(2, '0')}.webp`;
   const suitIndex = ((card.id - 22) % 14) + 1;
   return `/cards/${card.suit}-${String(suitIndex).padStart(2, '0')}.webp`;
+}
+
+function buildChoiceQuestion(optionA: string, optionB: string) {
+  const first = optionA.trim();
+  const second = optionB.trim();
+  if (!first && !second) return '';
+  return `在“${first || '选项 A'}”与“${second || '选项 B'}”之间，我应该如何选择？`;
+}
+
+function parseChoiceQuestion(value: string) {
+  const match = value.match(/^在“(.+)”与“(.+)”之间，我应该如何选择？$/);
+  return match ? {
+    optionA: match[1] === '选项 A' ? '' : match[1],
+    optionB: match[2] === '选项 B' ? '' : match[2],
+  } : null;
+}
+
+function formatDiaryDate(timestamp: number) {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
 const majorSymbols = [
@@ -580,12 +647,15 @@ export default function Home() {
   const [view, setView] = useState<AppView>('reading');
   const [spread, setSpread] = useState<Spread>('single');
   const [question, setQuestion] = useState('');
+  const [choiceOptionA, setChoiceOptionA] = useState('');
+  const [choiceOptionB, setChoiceOptionB] = useState('');
   const [drawn, setDrawn] = useState<DrawnCard[]>([]);
   const [selectionDeck, setSelectionDeck] = useState<DrawnCard[]>([]);
   const [selectedCards, setSelectedCards] = useState<DrawnCard[]>([]);
   const [isSelecting, setIsSelecting] = useState(false);
   const [isShuffling, setIsShuffling] = useState(false);
   const [history, setHistory] = useState<SavedReading[]>([]);
+  const [openDiaryId, setOpenDiaryId] = useState<string | null>(null);
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>('all');
   const [libraryCardId, setLibraryCardId] = useState(0);
@@ -659,7 +729,7 @@ export default function Home() {
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') as SavedReading[];
-      setHistory(Array.isArray(stored) ? stored.slice(0,30) : []);
+      setHistory(Array.isArray(stored) ? stored.slice(0,MAX_HISTORY_ITEMS) : []);
     } catch {
       setHistory([]);
     }
@@ -674,6 +744,9 @@ export default function Home() {
     if (restored.length !== spreadDefinitions[shared.spread].positions.length) return;
     setSpread(shared.spread);
     setQuestion(shared.question || '');
+    const sharedChoice = shared.spread === 'choice' ? parseChoiceQuestion(shared.question || '') : null;
+    setChoiceOptionA(shared.optionA || sharedChoice?.optionA || '');
+    setChoiceOptionB(shared.optionB || sharedChoice?.optionB || '');
     setDrawn(restored);
     setIsSharedReading(true);
     setView('reading');
@@ -1066,6 +1139,33 @@ export default function Home() {
     event.currentTarget.style.removeProperty('--glare-y');
   }
 
+  function changeSpread(nextSpread: Spread) {
+    setSpread(nextSpread);
+    setDrawn([]);
+    if (nextSpread === 'choice') {
+      const parsed = parseChoiceQuestion(question);
+      setChoiceOptionA(parsed?.optionA || '');
+      setChoiceOptionB(parsed?.optionB || '');
+      setQuestion(parsed ? question : '');
+    } else if (spread === 'choice') {
+      setChoiceOptionA('');
+      setChoiceOptionB('');
+      setQuestion('');
+    }
+  }
+
+  function chooseQuestionExample(example: string) {
+    setQuestion(example);
+  }
+
+  function updateChoiceOption(target: 'A' | 'B', value: string) {
+    const nextA = target === 'A' ? value : choiceOptionA;
+    const nextB = target === 'B' ? value : choiceOptionB;
+    if (target === 'A') setChoiceOptionA(value);
+    else setChoiceOptionB(value);
+    setQuestion(buildChoiceQuestion(nextA, nextB));
+  }
+
   function makeReading(cardList: DrawnCard[], createdAt = Date.now()): SavedReading {
     return {
       id: `${createdAt}-${Math.random().toString(36).slice(2,8)}`,
@@ -1073,6 +1173,8 @@ export default function Home() {
       question,
       spread,
       cards: cardList.map((card) => ({ id: card.id, reversed: card.reversed })),
+      optionA: spread === 'choice' ? choiceOptionA.trim() : undefined,
+      optionB: spread === 'choice' ? choiceOptionB.trim() : undefined,
     };
   }
 
@@ -1080,7 +1182,8 @@ export default function Home() {
     if (!cardList.length) return;
     const record = makeReading(cardList);
     setHistory((current) => {
-      const next = [record, ...current].slice(0,30);
+      const duplicate = current.find((item) => item.spread === record.spread && item.question === record.question && item.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-') === record.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-'));
+      const next = duplicate ? current : [record, ...current].slice(0,MAX_HISTORY_ITEMS);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
       return next;
     });
@@ -1095,6 +1198,9 @@ export default function Home() {
     if (restored.length !== spreadDefinitions[record.spread].positions.length) return;
     setSpread(record.spread);
     setQuestion(record.question);
+    const restoredChoice = record.spread === 'choice' ? parseChoiceQuestion(record.question) : null;
+    setChoiceOptionA(record.optionA || restoredChoice?.optionA || '');
+    setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
     setDrawn(restored);
     setIsSharedReading(false);
     setView('reading');
@@ -1104,6 +1210,18 @@ export default function Home() {
   function removeHistory(id: string) {
     setHistory((current) => {
       const next = current.filter((item) => item.id !== id);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    if (openDiaryId === id) setOpenDiaryId(null);
+  }
+
+  function updateDiaryNote(id: string, field: 'initial' | 'outcome' | 'reflection', value: string) {
+    setHistory((current) => {
+      const next = current.map((item) => item.id === id ? {
+        ...item,
+        notes: { ...item.notes, [field]: value, updatedAt: Date.now() },
+      } : item);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
       return next;
     });
@@ -1256,6 +1374,10 @@ export default function Home() {
   }
 
   function drawCards() {
+    if (spread === 'choice' && (!choiceOptionA.trim() || !choiceOptionB.trim())) {
+      showNotice('请先写下选项 A 和选项 B');
+      return;
+    }
     holdCompletedRef.current = false;
     setHoldProgress(0);
     setIsHoldingMoon(false);
@@ -1366,6 +1488,8 @@ export default function Home() {
   function reset() {
     setDrawn([]);
     setQuestion('');
+    setChoiceOptionA('');
+    setChoiceOptionB('');
     setSelectionDeck([]);
     setSelectedCards([]);
     setIsSelecting(false);
@@ -1396,7 +1520,7 @@ export default function Home() {
         <nav className="site-nav" aria-label="主要功能">
           <button className={view === 'reading' ? 'active' : ''} onClick={() => setView('reading')}><MoonStar aria-hidden="true" />抽牌</button>
           <button className={view === 'library' ? 'active' : ''} onClick={() => setView('library')}><BookOpen aria-hidden="true" />牌库</button>
-          <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />历史</button>
+          <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />日记</button>
         </nav>
       </header>
 
@@ -1564,18 +1688,33 @@ export default function Home() {
 
           <div className="spread-switch spread-catalog" aria-label="选择牌阵">
             {(Object.entries(spreadDefinitions) as [Spread, SpreadDefinition][]).map(([key, definition]) => (
-              <button key={key} className={spread === key ? 'active' : ''} onClick={() => { setSpread(key); setDrawn([]); }}>
+              <button key={key} className={spread === key ? 'active' : ''} onClick={() => changeSpread(key)}>
                 <span>{definition.name}</span><small>{definition.countLabel} · {definition.description}</small>
               </button>
             ))}
           </div>
 
-          <label className="question-label" htmlFor="question"><span>你想询问什么？</span><span>可选</span></label>
-          <Textarea id="question" value={question} maxLength={80} onChange={(event) => setQuestion(event.target.value)} placeholder="例如：我该如何看待眼前的变化？" className="question-box" />
-          <p className="question-hint">试着问“我可以如何……”而不是只问“会不会”。</p>
+          <div className="question-label"><span>{spread === 'choice' ? '写下你正在比较的两个选项' : '你想询问什么？'}</span><span>{spread === 'choice' ? '必填两个更清晰' : '可选'}</span></div>
+          {spread === 'choice' ? (
+            <div className="choice-question-builder" aria-label="二选一问题">
+              <label className="choice-field" htmlFor="choice-option-a"><span><b>A</b> 选项 A</span><Input id="choice-option-a" value={choiceOptionA} maxLength={38} onChange={(event) => updateChoiceOption('A', event.target.value)} placeholder="例如：留在现在的公司" /></label>
+              <span className="choice-divider">或</span>
+              <label className="choice-field" htmlFor="choice-option-b"><span><b>B</b> 选项 B</span><Input id="choice-option-b" value={choiceOptionB} maxLength={38} onChange={(event) => updateChoiceOption('B', event.target.value)} placeholder="例如：接受新的工作机会" /></label>
+              <p className="choice-question-preview">{question || '填入两个选项后，系统会自动组成适合牌阵的问题。'}</p>
+            </div>
+          ) : (
+            <>
+              <Textarea id="question" value={question} maxLength={96} onChange={(event) => setQuestion(event.target.value)} placeholder={questionExamples[spread][0]} className="question-box" />
+              <div className="question-prompts">
+                <p><Sparkles aria-hidden="true" /> 你可以这样问，点一下直接填入</p>
+                <div>{questionExamples[spread].map((example) => <button type="button" className={question === example ? 'active' : ''} onClick={() => chooseQuestionExample(example)} key={example}>{example}</button>)}</div>
+              </div>
+              <p className="question-hint">开放式问题通常比只问“会不会”更能得到可行动的线索。</p>
+            </>
+          )}
 
           <div className="action-row">
-            <Button onClick={drawCards} disabled={isShuffling} className="draw-button">
+            <Button onClick={drawCards} disabled={isShuffling || (spread === 'choice' && (!choiceOptionA.trim() || !choiceOptionB.trim()))} className="draw-button">
               <Sparkles aria-hidden="true" />{isShuffling ? '正在洗牌…' : drawn.length ? '重新抽牌' : '开始抽牌'}
             </Button>
             {drawn.length > 0 && <Button variant="ghost" onClick={reset} className="reset-button" aria-label="清除本次抽牌"><RotateCcw aria-hidden="true" /> 清空</Button>}
@@ -1959,21 +2098,56 @@ export default function Home() {
       {view === 'history' && (
         <section className="history-shell" id="history">
           <div className="section-heading">
-            <p className="eyebrow"><span /> YOUR READING ARCHIVE</p>
-            <h1>历史解读</h1>
-            <p>最近30次解读保存在当前设备中，不会上传你的问题。打开记录后可以继续复制、导出或生成只读链接。</p>
+            <p className="eyebrow"><span /> YOUR TAROT JOURNAL</p>
+            <h1>塔罗日记</h1>
+            <p>保存当时的问题和牌阵，也记录后来真正发生了什么。所有内容仅保存在当前设备，不会上传你的私人笔记。</p>
           </div>
           {history.length ? <div className="history-list">
             {history.map((record) => {
               const definition = spreadDefinitions[record.spread];
               const previewCards = record.cards.slice(0,5).map((entry) => cards.find((card) => card.id === entry.id)).filter(Boolean) as TarotCard[];
-              return <article key={record.id} className="history-item">
-                <div className="history-card-stack">{previewCards.map((card,index) => <img key={`${record.id}-${card.id}`} src={cardImagePath(card)} alt="" style={{ transform: `translateX(${index * 24}px) rotate(${(index - 2) * 3}deg)` }} />)}</div>
-                <div className="history-copy"><span>{new Date(record.createdAt).toLocaleString('zh-CN')}</span><h2>{definition.name} · {record.cards.length}张</h2><p>{record.question || '未填写问题'}</p></div>
-                <div className="history-actions"><Button onClick={() => restoreReading(record)}>打开解读</Button><button onClick={() => removeHistory(record.id)}>删除</button></div>
+              const ageDays = Math.max(0, Math.floor((Date.now() - record.createdAt) / 86400000));
+              const noteCount = [record.notes?.initial, record.notes?.outcome, record.notes?.reflection].filter((note) => note?.trim()).length;
+              const isOpen = openDiaryId === record.id;
+              return <article key={record.id} className={`history-item diary-entry ${isOpen ? 'open' : ''}`}>
+                <div className="diary-overview">
+                  <div className="history-card-stack">{previewCards.map((card,index) => <img key={`${record.id}-${card.id}`} src={cardImagePath(card)} alt="" style={{ transform: `translateX(${index * 24}px) rotate(${(index - 2) * 3}deg)` }} />)}</div>
+                  <div className="history-copy">
+                    <span>{formatDiaryDate(record.createdAt)}</span>
+                    <h2>{definition.name}</h2>
+                    <p className="diary-question">{record.question || '这次没有写下问题'}</p>
+                    <div className="diary-meta"><small>{record.cards.length} 张牌</small><small>{noteCount ? `已写 ${noteCount}/3 段笔记` : '等待写下感受'}</small>{ageDays > 0 && <small>距今 {ageDays} 天</small>}</div>
+                  </div>
+                  <div className="history-actions">
+                    <Button onClick={() => restoreReading(record)}>打开完整解读</Button>
+                    <button className="diary-toggle" onClick={() => setOpenDiaryId(isOpen ? null : record.id)}>{isOpen ? '收起日记' : '补写日记'}</button>
+                    <button className="diary-delete" onClick={() => removeHistory(record.id)}>删除</button>
+                  </div>
+                </div>
+
+                {isOpen && <div className="diary-details">
+                  {ageDays >= 30 && !record.notes?.reflection?.trim() && <div className="diary-return-prompt"><span>☾</span><div><b>这次占卜已经过去 {ageDays} 天</b><p>当时看不清的部分，现在也许已经有了答案。要回来看看吗？</p></div></div>}
+                  <div className="diary-spread-review">
+                    <div className="diary-subheading"><span>01</span><div><b>当时抽到的牌</b><small>按「{definition.name}」的位置顺序</small></div></div>
+                    <ol>{record.cards.map((entry, index) => {
+                      const card = cards.find((item) => item.id === entry.id);
+                      const position = definition.positions[index];
+                      return card ? <li key={`${record.id}-diary-${entry.id}`}><span>{String(index + 1).padStart(2,'0')}</span><div><small>{position?.name || `第 ${index + 1} 张`}</small><b>{card.name} · {entry.reversed ? '逆位' : '正位'}</b></div></li> : null;
+                    })}</ol>
+                  </div>
+                  <div className="diary-note-section">
+                    <div className="diary-subheading"><span>02</span><div><b>把时间留下来</b><small>不必一次写完，内容会自动保存在这台设备</small></div></div>
+                    <div className="diary-note-grid">
+                      <label><span>当时的想法</span><small>刚看到牌面时，你最直接的感受是什么？</small><Textarea value={record.notes?.initial || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'initial',event.target.value)} placeholder="例如：我其实已经隐约知道答案，只是不愿意承认……" /></label>
+                      <label><span>后续发生了什么</span><small>事实如何发展？哪些部分与牌面产生了呼应？</small><Textarea value={record.notes?.outcome || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'outcome',event.target.value)} placeholder="例如：两周后我们进行了一次坦白的谈话……" /></label>
+                      <label><span>现在回看</span><small>今天的你，会怎样理解当时的自己和这组牌？</small><Textarea value={record.notes?.reflection || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'reflection',event.target.value)} placeholder="例如：真正重要的并不是预测结果，而是我终于开始……" /></label>
+                    </div>
+                    {record.notes?.updatedAt && <p className="diary-saved-status">最后整理于 {formatDiaryDate(record.notes.updatedAt)}</p>}
+                  </div>
+                </div>}
               </article>;
             })}
-          </div> : <div className="history-empty"><span>☾</span><h2>还没有保存的解读</h2><p>完成一次抽牌后，记录会自动出现在这里。</p><Button onClick={() => setView('reading')}>开始第一次抽牌</Button></div>}
+          </div> : <div className="history-empty"><span>☾</span><h2>你的塔罗日记还是空的</h2><p>完成一次抽牌后，问题、牌阵和牌面会自动保存在这里。</p><Button onClick={() => setView('reading')}>开始第一次抽牌</Button></div>}
         </section>
       )}
 
