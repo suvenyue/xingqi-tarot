@@ -23,6 +23,8 @@
   --destructive: #dc6b7a; --border: rgba(213, 174, 104, .22); --input: rgba(244, 234, 215, .12);
   --ring: #d5ae68; --radius: .75rem; --font-serif: Georgia, 'Noto Serif SC', 'Songti SC', serif;
   --font-sans: Arial, 'Microsoft YaHei', sans-serif;
+  --font-display-zh: 'ZCOOL XiaoWei','STSong','Songti SC',serif;
+  --font-display-en: 'Cinzel',Georgia,serif;
 }
 
 @layer base {
@@ -1051,14 +1053,31 @@ body::before {
 .eyebrow { position: relative; z-index: 1; color: #e4c681; letter-spacing: .31em; }
 .eyebrow span { background: linear-gradient(90deg,transparent,#e4c681); }
 h1 { color: #faf2e3; text-shadow: 0 12px 45px rgba(0,0,0,.32); }
+.intro-panel .eyebrow {
+  font-family: var(--font-display-en);
+  font-weight: 600;
+  letter-spacing: .36em;
+  text-shadow: 0 0 18px rgba(228,198,129,.12);
+}
 .intro-panel h1 {
   position: relative;
   z-index: 1;
   margin: 23px 0 19px;
+  width: fit-content;
+  font-family: var(--font-display-zh);
+  font-weight: 400;
   font-size: clamp(43px,4.6vw,66px);
-  line-height: 1.12;
-  letter-spacing: -.045em;
+  line-height: 1.2;
+  letter-spacing: .035em;
+  color: transparent;
+  background: linear-gradient(112deg,#fff7e8 4%,#eadab9 43%,#cfae6b 72%,#f5e9ce 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  filter: drop-shadow(0 8px 22px rgba(2,2,8,.42)) drop-shadow(0 0 17px rgba(215,177,105,.08));
+  text-shadow: none;
+  animation: coverTitleReveal 1.05s cubic-bezier(.2,.76,.25,1) both;
 }
+.intro-panel h1::selection { color: #24172f; background: #e9cf95; -webkit-text-fill-color: #24172f; }
 .intro-copy { position: relative; z-index: 1; color: #b7afc2; font-size: 14px; line-height: 1.95; }
 .deck-badge {
   position: relative;
@@ -1071,6 +1090,11 @@ h1 { color: #faf2e3; text-shadow: 0 12px 45px rgba(0,0,0,.32); }
   color: #9f98ad;
 }
 .deck-badge span { border-color: rgba(228,198,129,.33); background: rgba(228,198,129,.08); color: #ecd493; }
+
+@keyframes coverTitleReveal {
+  from { opacity: 0; transform: translateY(10px); filter: blur(3px) drop-shadow(0 8px 22px rgba(2,2,8,.42)); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0) drop-shadow(0 8px 22px rgba(2,2,8,.42)) drop-shadow(0 0 17px rgba(215,177,105,.08)); }
+}
 .spread-switch { padding: 8px; gap: 8px; border-color: rgba(228,198,129,.12); border-radius: 18px; background: rgba(5,6,16,.36); }
 .spread-catalog {
   grid-template-columns: repeat(2,minmax(0,1fr));
