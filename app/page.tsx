@@ -1306,8 +1306,6 @@ export default function Home() {
       moved: false,
       blockClick: false,
     };
-    fan.setPointerCapture(event.pointerId);
-    fan.classList.add('is-dragging');
   }
 
   function moveFanDrag(event: ReactPointerEvent<HTMLDivElement>) {
@@ -1315,6 +1313,10 @@ export default function Home() {
     if (!drag.active || drag.pointerId !== event.pointerId) return;
     const distance = event.clientX - drag.startX;
     if (Math.abs(distance) > 4) {
+      if (!drag.moved) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.currentTarget.classList.add('is-dragging');
+      }
       drag.moved = true;
       drag.blockClick = true;
     }
