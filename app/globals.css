@@ -1434,6 +1434,164 @@ footer { color: #747184; }
 .ai-chat-footer button:disabled { opacity: .45; cursor: not-allowed; }
 .ai-chat-footer svg { width: 11px; }
 
+/* Distinct celestial rooms: one restrained universe, a different energy for each section. */
+body {
+  background:
+    radial-gradient(ellipse at 8% 7%,rgba(74,82,178,.22),transparent 30rem),
+    radial-gradient(ellipse at 91% 18%,rgba(147,68,133,.17),transparent 33rem),
+    radial-gradient(ellipse at 16% 64%,rgba(66,111,137,.09),transparent 31rem),
+    radial-gradient(ellipse at 81% 78%,rgba(111,63,145,.12),transparent 35rem),
+    radial-gradient(ellipse at 48% 103%,rgba(151,98,47,.12),transparent 36rem),
+    linear-gradient(145deg,#06050d 0%,#0b0919 38%,#100917 70%,#080611 100%);
+}
+
+.intro-panel {
+  border-color: rgba(231,199,129,.2);
+  background:
+    radial-gradient(circle at 92% 5%,rgba(167,112,163,.14),transparent 31%),
+    radial-gradient(circle at 5% 88%,rgba(201,155,75,.07),transparent 34%),
+    linear-gradient(145deg,rgba(27,22,50,.9),rgba(12,9,25,.96));
+}
+
+.table-panel {
+  border-color: rgba(153,184,229,.24);
+  background:
+    radial-gradient(ellipse at 50% 8%,rgba(145,177,231,.18),transparent 30%),
+    radial-gradient(ellipse at 8% 76%,rgba(97,75,160,.1),transparent 36%),
+    radial-gradient(ellipse at 92% 84%,rgba(207,172,100,.055),transparent 31%),
+    linear-gradient(150deg,rgba(15,22,48,.97),rgba(9,8,24,.98) 62%,rgba(18,10,27,.98));
+  box-shadow: 0 34px 90px rgba(0,0,0,.31),inset 0 1px rgba(217,229,255,.055),inset 0 0 95px rgba(35,54,116,.12);
+}
+.table-panel::before { border-color: rgba(163,193,236,.16); box-shadow: inset 0 0 52px rgba(75,104,181,.065); }
+.table-kicker { color: #a8bde2; }
+
+.selection-ritual {
+  border-color: rgba(191,151,225,.22);
+  background:
+    radial-gradient(circle at 50% 28%,rgba(136,91,187,.2),transparent 35%),
+    radial-gradient(ellipse at 12% 80%,rgba(92,125,178,.08),transparent 30%),
+    linear-gradient(145deg,rgba(29,18,48,.98),rgba(8,6,18,.99));
+}
+.fan-window { border-color: rgba(167,151,221,.12); background: radial-gradient(ellipse at 50% 42%,rgba(118,112,211,.18),transparent 48%),rgba(3,4,13,.35); }
+
+.spread-switch button { --spread-accent: 228,198,129; }
+.spread-switch button:nth-child(2) { --spread-accent: 139,172,222; }
+.spread-switch button:nth-child(3) { --spread-accent: 208,139,174; }
+.spread-switch button:nth-child(4) { --spread-accent: 178,137,222; }
+.spread-switch button:nth-child(5) { --spread-accent: 120,181,169; }
+.spread-switch button:nth-child(6) { --spread-accent: 219,173,100; }
+.spread-switch button:nth-child(7) { --spread-accent: 145,154,225; }
+.spread-switch button:hover { border-color: rgba(var(--spread-accent),.17); background: linear-gradient(135deg,rgba(var(--spread-accent),.075),rgba(255,255,255,.018)); }
+.spread-switch button.active {
+  border-color: rgba(var(--spread-accent),.34);
+  background: linear-gradient(135deg,rgba(var(--spread-accent),.18),rgba(83,61,128,.12));
+  box-shadow: 0 10px 30px rgba(0,0,0,.18),inset 3px 0 rgba(var(--spread-accent),.55),inset 0 1px rgba(255,255,255,.035);
+}
+.spread-switch button.active::before { color: rgb(var(--spread-accent)); }
+
+.reading-layer {
+  --layer-accent: 223,192,122;
+  --layer-glow: 122,78,142;
+  position: relative;
+  border-color: rgba(var(--layer-accent),.22);
+  background:
+    radial-gradient(ellipse at 91% 3%,rgba(var(--layer-accent),.11),transparent 29%),
+    radial-gradient(ellipse at 5% 104%,rgba(var(--layer-glow),.16),transparent 37%),
+    linear-gradient(145deg,rgba(28,21,46,.91),rgba(8,7,18,.94));
+  box-shadow: inset 0 1px rgba(255,255,255,.035),0 16px 42px rgba(0,0,0,.12),0 0 30px rgba(var(--layer-glow),.025);
+}
+.reading-layer::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 0;
+  z-index: 2;
+  height: 1px;
+  background: linear-gradient(90deg,transparent,rgba(var(--layer-accent),.68),transparent);
+  pointer-events: none;
+}
+.reading-layer[open] { border-color: rgba(var(--layer-accent),.31); box-shadow: inset 0 1px rgba(255,255,255,.045),0 20px 48px rgba(0,0,0,.15),0 0 34px rgba(var(--layer-glow),.04); }
+.reading-layer > summary:hover { background: rgba(var(--layer-accent),.05); }
+.reading-layer > summary svg { color: rgba(var(--layer-accent),.9); }
+.reading-layer .layer-number {
+  border-color: rgba(var(--layer-accent),.42);
+  background: radial-gradient(circle,rgba(var(--layer-accent),.17),rgba(var(--layer-accent),.045));
+  color: rgb(var(--layer-accent));
+  box-shadow: 0 0 18px rgba(var(--layer-accent),.08);
+}
+.reading-layer .layer-content { border-top-color: rgba(var(--layer-accent),.13); }
+
+.layer-summary { --layer-accent: 229,190,112; --layer-glow: 147,73,76; }
+.layer-panorama { --layer-accent: 143,181,231; --layer-glow: 57,83,156; }
+.layer-cards { --layer-accent: 190,143,226; --layer-glow: 105,62,148; }
+.layer-relationships { --layer-accent: 221,139,177; --layer-glow: 139,52,97; }
+.layer-energy { --layer-accent: 139,151,230; --layer-glow: 54,69,166; }
+.layer-guidance { --layer-accent: 121,194,170; --layer-glow: 42,118,98; }
+
+.layer-summary .summary-content blockquote { border-left-color: rgba(229,190,112,.62); background: linear-gradient(90deg,rgba(229,190,112,.08),transparent); }
+.layer-panorama .overview-path span { border-color: rgba(143,181,231,.12); background: rgba(36,57,99,.16); }
+.layer-relationships .relationship-content li { border-color: rgba(221,139,177,.13); background: linear-gradient(90deg,rgba(116,38,81,.11),rgba(3,4,12,.24)); }
+.layer-relationships .relationship-content li::before { color: #dc8faf; }
+.layer-energy .structure-stats > div { border-color: rgba(139,151,230,.13); background: linear-gradient(145deg,rgba(73,83,171,.11),rgba(4,5,14,.22)); }
+.layer-guidance .structure-narrative section { border-color: rgba(121,194,170,.1); background: linear-gradient(90deg,rgba(42,108,91,.11),rgba(4,5,14,.19)); }
+.layer-guidance .structure-narrative .structure-advice { border-color: rgba(121,194,170,.25); background: linear-gradient(135deg,rgba(42,118,98,.18),rgba(207,174,103,.055)); }
+
+.layer-cards .detailed-reading {
+  border-color: rgba(190,143,226,.16);
+  background: radial-gradient(circle at 92% 10%,rgba(132,86,177,.1),transparent 28%),linear-gradient(145deg,rgba(32,21,48,.85),rgba(8,7,18,.9));
+}
+.layer-cards .detailed-reading[open] { border-color: rgba(190,143,226,.3); }
+.domain-grid section { position: relative; overflow: hidden; }
+.domain-grid section::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: var(--domain-accent,#d5ae68); opacity: .78; }
+.domain-grid section:nth-child(1) { --domain-accent: #d886a7; border-color: rgba(216,134,167,.15); background: linear-gradient(135deg,rgba(126,49,84,.12),rgba(4,5,14,.28)); }
+.domain-grid section:nth-child(2) { --domain-accent: #889fe0; border-color: rgba(136,159,224,.15); background: linear-gradient(135deg,rgba(51,70,135,.12),rgba(4,5,14,.28)); }
+.domain-grid section:nth-child(3) { --domain-accent: #d6b566; border-color: rgba(214,181,102,.15); background: linear-gradient(135deg,rgba(124,91,38,.12),rgba(4,5,14,.28)); }
+.domain-grid section:nth-child(4) { --domain-accent: #74b9aa; border-color: rgba(116,185,170,.15); background: linear-gradient(135deg,rgba(35,106,91,.12),rgba(4,5,14,.28)); }
+.domain-grid section:nth-child(5) { --domain-accent: #a78bd3; border-color: rgba(167,139,211,.15); background: linear-gradient(135deg,rgba(83,53,126,.12),rgba(4,5,14,.28)); }
+.domain-grid section:nth-child(1) > span { color: #dc9bb4; }
+.domain-grid section:nth-child(2) > span { color: #9caee4; }
+.domain-grid section:nth-child(3) > span { color: #dabe7c; }
+.domain-grid section:nth-child(4) > span { color: #8bc8ba; }
+.domain-grid section:nth-child(5) > span { color: #b19bd8; }
+
+.ai-tarot-chat {
+  border-color: rgba(129,167,225,.25);
+  background:
+    radial-gradient(ellipse at 92% 0,rgba(117,91,191,.2),transparent 34%),
+    radial-gradient(ellipse at 0 100%,rgba(48,111,138,.1),transparent 33%),
+    linear-gradient(145deg,rgba(15,24,51,.96),rgba(14,9,28,.98));
+  box-shadow: 0 25px 64px rgba(0,0,0,.2),inset 0 1px rgba(218,230,255,.05);
+}
+.ai-tarot-chat::before { border-color: rgba(138,178,232,.1); }
+.ai-oracle-mark { border-color: rgba(143,181,231,.42); background: radial-gradient(circle,rgba(143,181,231,.17),rgba(96,70,157,.09)); color: #a9c5eb; }
+.ai-chat-heading > div:nth-child(2) > span { color: #9ab8e4; }
+.ai-context-ribbon { border-color: rgba(143,181,231,.13); background: rgba(7,12,28,.38); }
+.ai-context-ribbon strong { color: #b3c8e8; }
+
+.reading-action-dock {
+  border-color: rgba(211,175,100,.26);
+  background: radial-gradient(circle at 7% 50%,rgba(218,181,104,.12),transparent 29%),linear-gradient(135deg,rgba(70,43,51,.32),rgba(75,49,105,.16) 50%,rgba(8,7,18,.9));
+}
+.closing-reading {
+  margin-top: 18px;
+  padding: 23px 24px;
+  border: 1px solid rgba(154,132,196,.15);
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 0,rgba(109,85,163,.1),transparent 45%),rgba(8,7,18,.42);
+}
+.closing-reading span { color: #aa99ce; }
+
+.library-toolbar {
+  border-color: rgba(191,139,111,.2);
+  background: linear-gradient(145deg,rgba(40,20,37,.93),rgba(11,10,25,.95));
+  box-shadow: 0 18px 48px rgba(0,0,0,.22),inset 0 1px rgba(255,224,196,.035);
+}
+.library-grid > button { border-color: rgba(189,133,106,.13); background: radial-gradient(circle at 85% 8%,rgba(139,68,100,.09),transparent 30%),linear-gradient(145deg,rgba(39,21,39,.76),rgba(10,9,22,.82)); }
+.library-grid > button:hover,.library-grid > button.active { border-color: rgba(214,167,114,.42); background: radial-gradient(circle at 85% 8%,rgba(161,80,112,.15),transparent 34%),linear-gradient(145deg,rgba(55,28,49,.9),rgba(18,13,32,.91)); }
+.card-encyclopedia { border-color: rgba(193,139,106,.21); background: radial-gradient(circle at 90% 4%,rgba(145,71,103,.14),transparent 31%),linear-gradient(150deg,rgba(42,23,43,.97),rgba(10,9,24,.98)); }
+.history-item { border-color: rgba(131,151,207,.15); background: radial-gradient(circle at 92% 4%,rgba(83,99,166,.11),transparent 31%),linear-gradient(145deg,rgba(19,27,54,.78),rgba(12,9,25,.84)); }
+
 @keyframes aiTyping {
   0%,100% { opacity: .25; transform: translateY(1px); }
   50% { opacity: 1; transform: translateY(-2px); }
