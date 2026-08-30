@@ -3,14 +3,6 @@
 @import 'shadcn/tailwind.css';
 
 @font-face {
-  font-family: 'ZCOOL XiaoWei';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400;
-  src: url('/fonts/zcool-xiaowei-zh-400.woff2') format('woff2');
-}
-
-@font-face {
   font-family: 'Cinzel';
   font-style: normal;
   font-display: swap;
@@ -39,7 +31,7 @@
   --destructive: #dc6b7a; --border: rgba(213, 174, 104, .22); --input: rgba(244, 234, 215, .12);
   --ring: #d5ae68; --radius: .75rem; --font-serif: Georgia, 'Noto Serif SC', 'Songti SC', serif;
   --font-sans: Arial, 'Microsoft YaHei', sans-serif;
-  --font-display-zh: 'ZCOOL XiaoWei','STSong','Songti SC',serif;
+  --font-display-zh: 'Iowan Old Style','Noto Serif SC','Source Han Serif SC','Songti SC','STSong',Georgia,serif;
   --font-display-en: 'Cinzel',Georgia,serif;
 }
 
@@ -274,7 +266,8 @@ h1 { margin: 24px 0 22px; font: 400 clamp(42px,5vw,72px)/1.13 var(--font-serif);
 .spread-year {
   display: block;
   width: min(100%, 650px);
-  min-height: 650px;
+  min-height: 0;
+  aspect-ratio: 1;
   margin: 0 auto;
   padding: 0;
   border: 1px solid rgba(213,174,104,.11);
@@ -520,7 +513,7 @@ footer span { letter-spacing: .2em; } footer p { margin: 0; font-family: var(--f
   .spread-career .position-card:nth-child(5) { grid-area: 4 / 2; }
   .spread-career .position-card:nth-child(6) { grid-area: 2 / 3; }
   .spread-career .position-card:nth-child(7) { grid-area: 1 / 4; }
-  .spread-year { width: min(100%,390px); min-height: 410px; }
+  .spread-year { width: min(100%,390px); min-height: 0; aspect-ratio: 1; }
   .spread-year .position-card { width: 54px; }
   .spread-year .position-card:first-child { width: 76px; }
   .spread-year .tarot-card { max-width: 54px; }
@@ -1082,18 +1075,16 @@ h1 { color: #faf2e3; text-shadow: 0 12px 45px rgba(0,0,0,.32); }
   width: fit-content;
   font-family: var(--font-display-zh);
   font-weight: 400;
-  font-size: clamp(43px,4.6vw,66px);
-  line-height: 1.2;
-  letter-spacing: .035em;
-  color: transparent;
-  background: linear-gradient(112deg,#fff7e8 4%,#eadab9 43%,#cfae6b 72%,#f5e9ce 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  filter: drop-shadow(0 8px 22px rgba(2,2,8,.42)) drop-shadow(0 0 17px rgba(215,177,105,.08));
-  text-shadow: none;
+  font-size: clamp(44px,4.5vw,64px);
+  line-height: 1.16;
+  letter-spacing: -.04em;
+  color: #f8efe1;
+  background: none;
+  filter: drop-shadow(0 9px 24px rgba(2,2,8,.38));
+  text-shadow: 0 0 24px rgba(215,177,105,.055);
   animation: coverTitleReveal 1.05s cubic-bezier(.2,.76,.25,1) both;
 }
-.intro-panel h1::selection { color: #24172f; background: #e9cf95; -webkit-text-fill-color: #24172f; }
+.intro-panel h1::selection { color: #24172f; background: #e9cf95; }
 .intro-copy { position: relative; z-index: 1; color: #b7afc2; font-size: 14px; line-height: 1.95; }
 .deck-badge {
   position: relative;
@@ -1109,7 +1100,7 @@ h1 { color: #faf2e3; text-shadow: 0 12px 45px rgba(0,0,0,.32); }
 
 @keyframes coverTitleReveal {
   from { opacity: 0; transform: translateY(10px); filter: blur(3px) drop-shadow(0 8px 22px rgba(2,2,8,.42)); }
-  to { opacity: 1; transform: translateY(0); filter: blur(0) drop-shadow(0 8px 22px rgba(2,2,8,.42)) drop-shadow(0 0 17px rgba(215,177,105,.08)); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0) drop-shadow(0 9px 24px rgba(2,2,8,.38)); }
 }
 .spread-switch { padding: 8px; gap: 8px; border-color: rgba(228,198,129,.12); border-radius: 18px; background: rgba(5,6,16,.36); }
 .spread-catalog {
@@ -1190,7 +1181,7 @@ h1 { color: #faf2e3; text-shadow: 0 12px 45px rgba(0,0,0,.32); }
 .spread-scene-caption > span { width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid rgba(223,192,122,.24); border-radius: 50%; color: #dbbd79; font: 15px/1 var(--font-serif); }
 .spread-scene-caption b { display: block; color: #d8c8ae; font: 500 10px/1.2 var(--font-serif); letter-spacing: .08em; }
 .spread-scene-caption small { display: block; margin-top: 3px; color: #746b7b; font-size: 7px; letter-spacing: .04em; }
-.card-stage > .position-card { position: relative; z-index: 2; }
+.card-stage:not(.spread-year) > .position-card { position: relative; z-index: 2; }
 .spread-atmosphere { position: absolute; inset: 8px; z-index: 0; overflow: hidden; border-radius: 18px; pointer-events: none; opacity: .72; }
 .spread-atmosphere::before,.spread-atmosphere::after { content: ''; position: absolute; pointer-events: none; }
 .scene-core { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); color: rgba(223,192,122,.065); font: 150px/1 var(--font-serif); }
