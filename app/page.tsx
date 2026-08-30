@@ -2418,6 +2418,39 @@ export default function Home() {
             <h1>韦特塔罗牌库</h1>
             <p>浏览完整78张韦特—史密斯牌面，检索标准正逆位、图像象征、生活领域、牌阵位置与组合关系。</p>
           </div>
+          <section className="arcana-archive" aria-labelledby="arcana-archive-title">
+            <div className="archive-heading">
+              <div>
+                <span>HISTORIA · SYMBOLA · VERBA</span>
+                <h2 id="arcana-archive-title">秘仪档案</h2>
+              </div>
+              <p>塔罗并非一开始就是占卜工具。沿着纸牌、象征与艺术的流变，读懂这套图像语言从何而来。</p>
+            </div>
+            <div className="tarot-timeline">
+              <article>
+                <time>约 1440—1450</time>
+                <b>北意大利 · 纸牌游戏</b>
+                <p>现存早期记录集中在米兰、威尼斯、佛罗伦萨与乌尔比诺一带。它最初是一种带有“凯旋牌”的竞技纸牌，而非预言工具。</p>
+              </article>
+              <article>
+                <time>18世纪后期</time>
+                <b>法国 · 走向占卜</b>
+                <p>纸牌占卜家开始为塔罗建立神秘学解释。此后，数字、占星、卡巴拉等象征系统逐渐被纳入解读传统。</p>
+              </article>
+              <article>
+                <time>1909</time>
+                <b>伦敦 · 韦特—史密斯体系</b>
+                <p>Arthur Edward Waite 构思体系，Pamela Colman Smith 绘制牌面。56张小阿卡纳获得完整场景，奠定现代直觉解牌的视觉语言。</p>
+              </article>
+            </div>
+            <div className="latin-cabinet" aria-label="拉丁语冥想箴言">
+              <div className="latin-intro"><span>VERBA ARCANA</span><b>适合抽牌前默念的拉丁语</b><small>用于营造仪式感，并非原版韦特牌面铭文</small></div>
+              <blockquote><i>NOSCE TE IPSUM</i><span>认识你自己</span></blockquote>
+              <blockquote><i>PER ASPERA AD ASTRA</i><span>穿越艰难，抵达群星</span></blockquote>
+              <blockquote><i>LUX IN TENEBRIS</i><span>黑暗中的光</span></blockquote>
+            </div>
+            <p className="archive-sources">历史参考：<a href="https://www.metmuseum.org/perspectives/tarot-2" target="_blank" rel="noreferrer">纽约大都会艺术博物馆</a><span>·</span><a href="https://www.vam.ac.uk/articles/tarot-cards" target="_blank" rel="noreferrer">V&amp;A 博物馆</a></p>
+          </section>
           <div className="library-toolbar">
             <input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="搜索牌名、英文名或关键词" aria-label="搜索牌库" />
             <div className="library-filters" aria-label="牌库筛选">
