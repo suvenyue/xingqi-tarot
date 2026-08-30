@@ -1,6 +1,4 @@
 import type { Metadata } from 'next';
-import '@fontsource/zcool-xiaowei/chinese-simplified-400.css';
-import '@fontsource/cinzel/600.css';
 import './globals.css';
 
 export const metadata: Metadata = {
