@@ -112,6 +112,10 @@ function extractCompletedText(value: unknown) {
   if (!value || typeof value !== 'object') return '';
   const response = value as Record<string, unknown>;
   if (typeof response.output_text === 'string') return response.output_text;
+  if (Array.isArray(response.choices)) {
+    const first = response.choices[0] as { message?: { content?: string } } | undefined;
+    if (typeof first?.message?.content === 'string') return first.message.content;
+  }
   if (!Array.isArray(response.output)) return '';
   return response.output.flatMap((item) => {
     const content = (item as { content?: unknown[] })?.content;
@@ -133,7 +137,7 @@ function upstreamErrorMessage(status: number) {
 export async function POST(request: Request) {
   const apiKey = process.env.MOYU_API_KEY;
   const baseUrl = (process.env.MOYU_BASE_URL || 'https://www.moyu.info/v1').replace(/\/$/, '');
-  const model = process.env.MOYU_MODEL || 'gpt-5.4';
+  const model = process.env.MOYU_MODEL || 'deepseek-v4-flash';
 
   if (!apiKey) {
     return Response.json({ error: 'AI 服务尚未完成服务器配置。' }, { status: 503 });
@@ -176,7 +180,7 @@ export async function POST(request: Request) {
 
   let upstream: Response;
   try {
-    upstream = await fetch(`${baseUrl}/responses`, {
+    upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -184,9 +188,8 @@ export async function POST(request: Request) {
       },
       body: JSON.stringify({
         model,
-        instructions,
-        input,
-        max_output_tokens: 520,
+        messages: [{ role: 'system', content: instructions }, ...input],
+        max_tokens: 520,
         stream: true,
       }),
     });
