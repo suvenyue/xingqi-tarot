@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import AuthStatus from './auth-status';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -24,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className="dark">
-      <body>{children}</body>
+      <body><AuthStatus />{children}</body>
     </html>
   );
 }

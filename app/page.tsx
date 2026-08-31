@@ -441,9 +441,42 @@ type ChatMessage = {
   createdAt: number;
   tools?: string[];
   mode?: AgentMode;
+  evidence?: string[];
 };
 type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
-type AgentMemory = { enabled: boolean; note: string };
+type AgentMemory = { enabled: boolean; note: string; updatedAt?: number };
+type CloudSyncStatus = 'checking' | 'local' | 'ready' | 'syncing' | 'error';
+type CloudSnapshot = {
+  history: SavedReading[];
+  dailyEntries: DailyEntry[];
+  chats: Record<string,SavedChat>;
+  memory: AgentMemory;
+  updatedAt: number;
+};
+
+function mergeRecords<T>(localItems: T[], cloudItems: T[], keyOf: (item: T) => string, updatedOf: (item: T) => number) {
+  const merged = new Map<string,T>();
+  [...localItems,...cloudItems].forEach((item) => {
+    const key = keyOf(item);
+    const current = merged.get(key);
+    if (!current || updatedOf(item) >= updatedOf(current)) merged.set(key,item);
+  });
+  return [...merged.values()].sort((first,second) => updatedOf(second) - updatedOf(first));
+}
+
+function mergeCloudSnapshots(local: CloudSnapshot, cloud: Partial<CloudSnapshot> | null): CloudSnapshot {
+  if (!cloud) return local;
+  const history = mergeRecords(local.history,Array.isArray(cloud.history) ? cloud.history : [],(item) => item.id,(item) => item.notes?.updatedAt || item.createdAt).slice(0,MAX_HISTORY_ITEMS);
+  const dailyEntries = mergeRecords(local.dailyEntries,Array.isArray(cloud.dailyEntries) ? cloud.dailyEntries : [],(item) => item.date,(item) => item.notes?.updatedAt || item.createdAt).slice(0,MAX_DAILY_ITEMS);
+  const chats = { ...local.chats };
+  Object.entries(cloud.chats || {}).forEach(([key,value]) => {
+    if (!chats[key] || value.updatedAt >= chats[key].updatedAt) chats[key] = value;
+  });
+  const trimmedChats = Object.fromEntries(Object.entries(chats).sort(([,a],[,b]) => b.updatedAt - a.updatedAt).slice(0,8));
+  const cloudMemory = cloud.memory && typeof cloud.memory.note === 'string' ? cloud.memory : null;
+  const memory = cloudMemory && (cloudMemory.updatedAt || 0) >= (local.memory.updatedAt || 0) ? cloudMemory : local.memory;
+  return { history, dailyEntries, chats: trimmedChats, memory, updatedAt: Math.max(local.updatedAt,cloud.updatedAt || 0) };
+}
 
 function withOrientation(card: TarotCard, reversed: boolean): DrawnCard {
   const { reversed: reversedKeywords, ...cardData } = card;
@@ -550,7 +583,7 @@ const majorSymbols = [
   '花环、四方守护者与舞者象征完成、整合、自由和循环圆满。',
 ];
 
-function visualSymbolism(card: TarotCard) {
+function visualSymbolism(card: Omit<TarotCard, 'reversed'>) {
   if (card.arcana !== 'minor') return majorSymbols[card.id];
   const suitSymbols: Record<string, string> = {
     wands: '权杖与火元素强调意志、创造、行动和向外扩张。',
@@ -851,6 +884,9 @@ export default function Home() {
   const [agentJournalEnabled, setAgentJournalEnabled] = useState(false);
   const [agentLabOpen, setAgentLabOpen] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('checking');
+  const [cloudDisplayName, setCloudDisplayName] = useState('');
+  const [cloudReady, setCloudReady] = useState(false);
   const [skyMode, setSkyMode] = useState<SkyMode>('auto');
   const [skyPeriod, setSkyPeriod] = useState<SkyPeriod>('night');
   const fanRef = useRef<HTMLDivElement>(null);
@@ -866,6 +902,7 @@ export default function Home() {
   const interpretationsRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const cloudSyncTimerRef = useRef<number | null>(null);
   const ritualTimersRef = useRef<number[]>([]);
   const burstTimerRef = useRef<number | null>(null);
   const holdFrameRef = useRef<number | null>(null);
@@ -1034,6 +1071,76 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const loadCloudState = async () => {
+      setCloudSyncStatus('checking');
+      try {
+        const response = await fetch('/api/cloud-state',{ headers: { Accept: 'application/json' } });
+        if (response.status === 401) {
+          if (!cancelled) setCloudSyncStatus('local');
+          return;
+        }
+        if (!response.ok) throw new Error('cloud unavailable');
+        const payload = await response.json() as { user?: { displayName?: string }; state?: Partial<CloudSnapshot> | null };
+        const parse = <T,>(key: string, fallback: T): T => {
+          try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; }
+        };
+        const local: CloudSnapshot = {
+          history: parse<SavedReading[]>(HISTORY_KEY,[]),
+          dailyEntries: parse<DailyEntry[]>(DAILY_TAROT_KEY,[]),
+          chats: parse<Record<string,SavedChat>>(AI_CHAT_KEY,{}),
+          memory: parse<AgentMemory>(AGENT_MEMORY_KEY,{ enabled: false, note: '', updatedAt: 0 }),
+          updatedAt: Date.now(),
+        };
+        const merged = mergeCloudSnapshots(local,payload.state || null);
+        localStorage.setItem(HISTORY_KEY,JSON.stringify(merged.history));
+        localStorage.setItem(DAILY_TAROT_KEY,JSON.stringify(merged.dailyEntries));
+        localStorage.setItem(AI_CHAT_KEY,JSON.stringify(merged.chats));
+        localStorage.setItem(AGENT_MEMORY_KEY,JSON.stringify(merged.memory));
+        if (cancelled) return;
+        setHistory(merged.history);
+        setDailyEntries(merged.dailyEntries);
+        setAgentMemoryEnabled(merged.memory.enabled === true);
+        setAgentMemoryNote(merged.memory.note.slice(0,1200));
+        setCloudDisplayName(payload.user?.displayName || '已登录');
+        setCloudReady(true);
+        setCloudSyncStatus('ready');
+      } catch {
+        if (!cancelled) setCloudSyncStatus('error');
+      }
+    };
+    void loadCloudState();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!cloudReady) return;
+    if (cloudSyncTimerRef.current !== null) window.clearTimeout(cloudSyncTimerRef.current);
+    cloudSyncTimerRef.current = window.setTimeout(async () => {
+      setCloudSyncStatus('syncing');
+      let chats: Record<string,SavedChat> = {};
+      try { chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string,SavedChat>; } catch { chats = {}; }
+      const state: CloudSnapshot = {
+        history: history.slice(0,MAX_HISTORY_ITEMS),
+        dailyEntries: dailyEntries.slice(0,MAX_DAILY_ITEMS),
+        chats,
+        memory: { enabled: agentMemoryEnabled, note: agentMemoryNote, updatedAt: Date.now() },
+        updatedAt: Date.now(),
+      };
+      try {
+        const response = await fetch('/api/cloud-state',{ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state }) });
+        if (!response.ok) throw new Error('sync failed');
+        setCloudSyncStatus('ready');
+      } catch {
+        setCloudSyncStatus('error');
+      }
+    },1400);
+    return () => {
+      if (cloudSyncTimerRef.current !== null) window.clearTimeout(cloudSyncTimerRef.current);
+    };
+  }, [cloudReady,history,dailyEntries,agentMemoryEnabled,agentMemoryNote,chatMessages,chatStyle]);
+
+  useEffect(() => {
     setChatError('');
     setChatInput('');
     setAgentJournalEnabled(false);
@@ -1085,7 +1192,7 @@ export default function Home() {
       return;
     }
     if (window.matchMedia('(pointer: coarse)').matches || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d')!;
     if (!context) return;
 
     type ConstellationNode = { px: number; py: number; size: number; drift: number };
@@ -1287,10 +1394,20 @@ export default function Home() {
     setAgentMemoryEnabled(enabled);
     setAgentMemoryNote(note);
     try {
-      localStorage.setItem(AGENT_MEMORY_KEY, JSON.stringify({ enabled, note } satisfies AgentMemory));
+      localStorage.setItem(AGENT_MEMORY_KEY, JSON.stringify({ enabled, note, updatedAt: Date.now() } satisfies AgentMemory));
     } catch {
       // The controls remain usable even if this browser blocks local storage.
     }
+  }
+
+  function clearAgentMemory() {
+    if (!agentMemoryNote.trim()) {
+      showNotice('当前没有需要删除的长期记忆');
+      return;
+    }
+    if (!window.confirm('确定删除智能体记住的全部背景吗？此操作会同步到云端。')) return;
+    saveAgentMemory(false,'');
+    showNotice('长期记忆已删除');
   }
 
   function toggleComparisonReading(id: string) {
@@ -1372,13 +1489,27 @@ export default function Home() {
           context: {
             question,
             spread: { name: spreadInfo.name, positions: spreadInfo.positions.map((position) => position.name) },
-            cards: drawn.map((card, index) => ({
-              name: card.name,
-              orientation: card.reversed ? '逆位' : '正位',
-              position: spreadInfo.positions[index].name,
-              keywords: card.reversed ? card.reversedKeywords : card.upright,
-              focus: spreadInfo.positions[index].focus,
-            })),
+            cards: drawn.map((card, index) => {
+              const guide = guideFor(card);
+              const origin = cardOrigin(card);
+              return {
+                id: card.id,
+                name: card.name,
+                englishName: card.en,
+                arcana: card.arcana === 'minor' ? '小阿卡纳' : '大阿卡纳',
+                suit: card.suitLabel || card.suit || '',
+                rank: card.rank || '',
+                element: card.element || '',
+                orientation: card.reversed ? '逆位' : '正位',
+                position: spreadInfo.positions[index].name,
+                keywords: card.reversed ? card.reversedKeywords : card.upright,
+                meaning: card.reversed ? card.reversedMeaning : card.uprightMeaning,
+                focus: spreadInfo.positions[index].focus,
+                symbolism: visualSymbolism(card),
+                domains: { love: guide.love, career: guide.career, money: guide.money, health: guide.health || '' },
+                origin: `${origin.historicalName}；${origin.waiteSmith}`,
+              };
+            }),
             synthesis: fullSynthesis,
             verdict: integrated?.verdict || '',
             connections: integrated?.connections.map((connection) => `${connection.title}：${connection.body}`) || [],
@@ -1451,19 +1582,21 @@ export default function Home() {
         ? assistantText.trimStart().slice(localMarker.length).trimStart()
         : assistantText;
       const finalMode: AgentMode = usedLocalFallback ? 'local' : 'model';
+      const answerEvidence = drawn.slice(0,7).map((card,index) => `${spreadInfo.positions[index]?.name || `牌位 ${index + 1}`}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
       setAgentMode(finalMode);
       if (finalMode === 'model') consumeLocalChatQuota();
       const completed = [
         ...baseMessages,
-        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode },
+        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode, evidence: answerEvidence },
       ];
       setChatMessages(completed);
       saveChat(completed);
     } catch (error) {
       if (abortController.signal.aborted) {
         const partial = assistantText.trim();
+        const answerEvidence = drawn.slice(0,7).map((card,index) => `${spreadInfo.positions[index]?.name || `牌位 ${index + 1}`}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
         const stoppedMessages = partial
-          ? [...baseMessages, { id: assistantId, role: 'assistant' as const, content: partial, createdAt: Date.now(), tools: toolLabels, mode: responseMode }]
+          ? [...baseMessages, { id: assistantId, role: 'assistant' as const, content: partial, createdAt: Date.now(), tools: toolLabels, mode: responseMode, evidence: answerEvidence }]
           : baseMessages;
         setChatMessages(stoppedMessages);
         setChatError('已停止生成。你可以继续追问，或重新生成上一条回答。');
@@ -2030,7 +2163,7 @@ export default function Home() {
   }, []);
 
   return (
-    <main className={`site-canvas sky-${activeSkyPeriod} min-h-screen overflow-hidden ${isSelecting ? 'selection-active' : ''}`}>
+    <main className={`site-canvas view-${view} sky-${activeSkyPeriod} min-h-screen overflow-hidden ${isSelecting ? 'selection-active' : ''}`}>
       <div className="time-sky" aria-hidden="true" />
       <canvas ref={trailRef} className="sky-effects" aria-hidden="true" />
       <div className="stars" aria-hidden="true">
@@ -2824,7 +2957,7 @@ export default function Home() {
               <h1>星契塔罗智能体</h1>
               <p>选择当前牌阵或一条塔罗日记，让智能体沿着牌位、正逆位、组合关系和现实行动继续陪你聊。</p>
             </div>
-            <div className="agent-page-stat"><span>今日可对话</span><b>{chatRemaining}</b><small>／{DAILY_CHAT_LIMIT} 次</small></div>
+            <div className="agent-page-stat"><span>今日可对话</span><b>{chatRemaining}</b><small>／{DAILY_CHAT_LIMIT} 次</small><em className={`cloud-${cloudSyncStatus}`}>{cloudSyncStatus === 'ready' ? `云端已同步${cloudDisplayName ? ` · ${cloudDisplayName}` : ''}` : cloudSyncStatus === 'syncing' ? '正在同步云端' : cloudSyncStatus === 'checking' ? '正在检查登录' : cloudSyncStatus === 'error' ? '云端暂不可用' : '当前为本地保存'}</em></div>
           </div>
 
           {!drawn.length ? (
@@ -2884,6 +3017,7 @@ export default function Home() {
                     <article className="agent-memory-card">
                       <div className="agent-capability-title"><span>长期记忆</span><button type="button" role="switch" aria-checked={agentMemoryEnabled} className={agentMemoryEnabled ? 'active' : ''} onClick={() => saveAgentMemory(!agentMemoryEnabled,agentMemoryNote)}><i />{agentMemoryEnabled ? '已开启' : '未开启'}</button></div>
                       <p>主动告诉智能体需要长期记住的背景。关闭后，内容仍留在设备中，但不会发送给模型。</p>
+                      <div className="agent-memory-toolbar"><span>智能体当前记住的内容 · {agentMemoryNote.length}/1200</span><button type="button" onClick={clearAgentMemory} disabled={!agentMemoryNote.trim()}>删除全部</button></div>
                       <Textarea value={agentMemoryNote} onChange={(event) => saveAgentMemory(agentMemoryEnabled,event.target.value.slice(0,1200))} placeholder="例如：我正在考虑转行；关系中的 TA 用代号 A；我更希望得到直接建议……" aria-label="希望智能体长期记住的背景" />
                       <div className="agent-pattern-snapshot"><span>历史模式</span><b>{personalPatterns.repeatedCards.length ? personalPatterns.repeatedCards.join(' · ') : '暂无重复牌'}</b><small>{personalPatterns.recentCount} 次记录 · 逆位约 {personalPatterns.reversedRate}% · 常用 {personalPatterns.dominantSpread}</small></div>
                     </article>
@@ -2926,7 +3060,7 @@ export default function Home() {
                   </div>
 
                   <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
-                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>{message.role === 'assistant' && message.content && <details className="ai-message-evidence"><summary>查看回答依据 <ChevronRight /></summary><div><span>{message.mode === 'local' ? '本地韦特牌义' : 'AI 模型协作'}</span><p>{(message.tools?.length ? message.tools : agentTools).join(' · ')}</p><small>依据当前「{spreadInfo.name}」的 {drawn.length} 张牌、牌位与正逆位生成；它表达的是解读路径，不是事实证明。</small></div></details>}</article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
+                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>{message.role === 'assistant' && message.content && <details className="ai-message-evidence"><summary>查看回答依据 <ChevronRight /></summary><div><span>{message.mode === 'local' ? '本地韦特牌义' : 'AI 模型协作'} · {(message.tools?.length ? message.tools : agentTools).join(' · ')}</span>{message.evidence?.length ? <ul>{message.evidence.map((item,index) => <li key={`${message.id}-evidence-${index}`}>{item}</li>)}</ul> : <p>本次回答依据当前「{spreadInfo.name}」的 {drawn.length} 张牌、牌位与正逆位生成。</p>}<small>这里展示的是智能体实际读取的牌库证据；它用于说明解读路径，不是对现实事实的证明。</small></div></details>}</article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
                     <div ref={chatEndRef} />
                   </div>
 

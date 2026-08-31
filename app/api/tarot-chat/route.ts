@@ -9,11 +9,21 @@ type TarotContext = {
   question?: string;
   spread?: { name?: string; positions?: string[] };
   cards?: Array<{
+    id?: number;
     name?: string;
+    englishName?: string;
+    arcana?: string;
+    suit?: string;
+    rank?: string;
+    element?: string;
     orientation?: string;
     position?: string;
     keywords?: string;
+    meaning?: string;
     focus?: string;
+    symbolism?: string;
+    domains?: { love?: string; career?: string; money?: string; health?: string };
+    origin?: string;
   }>;
   synthesis?: string;
   verdict?: string;
@@ -92,7 +102,9 @@ function contextText(context: TarotContext | undefined) {
   const cards = Array.isArray(context?.cards) ? context.cards.slice(0, 13) : [];
   const lines = cards.map((card, index) =>
     `${index + 1}. ${card.position || '牌位'}：${card.name || '未知牌'}（${card.orientation || '未知方向'}）` +
-    `；关键词：${card.keywords || '无'}；位置关注：${card.focus || '无'}`,
+    `；体系：${card.arcana || '未知'}${card.suit ? `／${card.suit}` : ''}${card.element ? `／${card.element}` : ''}` +
+    `；关键词：${card.keywords || '无'}；标准牌义：${card.meaning || '无'}；位置关注：${card.focus || '无'}` +
+    `；图像象征：${card.symbolism || '无'}`,
   );
 
   return [
@@ -125,7 +137,9 @@ function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) 
   const cards = Array.isArray(context?.cards) ? context.cards : [];
   const evidence = [
     tools.includes('spread') ? `[工具·读取牌阵] ${context?.spread?.name || '未知牌阵'}；${cards.map((card) => `${card.position || '牌位'}=${card.name || '未知牌'}${card.orientation ? `·${card.orientation}` : ''}`).join('；')}` : '',
-    tools.includes('meanings') ? `[工具·牌义检索] ${cards.map((card) => `${card.name || '未知牌'}：${card.keywords || '暂无关键词'}`).join('；')}` : '',
+    tools.includes('meanings') ? `[工具·78张牌库检索] ${cards.map((card) => `${card.name || '未知牌'}${card.orientation ? `·${card.orientation}` : ''}：${card.meaning || card.keywords || '暂无牌义'}；象征：${card.symbolism || '暂无'}`).join('；')}` : '',
+    tools.includes('meanings') ? `[工具·领域牌义] ${cards.map((card) => `${card.name || '未知牌'}：爱情=${card.domains?.love || '无'}；事业=${card.domains?.career || '无'}；财运=${card.domains?.money || '无'}；健康=${card.domains?.health || '无'}`).join('；')}` : '',
+    tools.includes('meanings') ? `[工具·历史与韦特图像] ${cards.map((card) => `${card.name || '未知牌'}：${card.origin || '暂无来源说明'}`).join('；')}` : '',
     tools.includes('patterns') && context?.energy ? `[工具·结构分析] ${context.energy}` : '',
     tools.includes('links') && context?.connections?.length ? `[工具·组合关系] ${context.connections.slice(0, 5).join('；')}` : '',
     tools.includes('actions') && context?.actions ? `[工具·行动建议] 适合：${context.actions.doNow || '暂无'}；避免：${context.actions.avoid || '暂无'}；观察：${context.actions.watch || '暂无'}` : '',
@@ -136,8 +150,8 @@ function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) 
   return evidence.join('\n');
 }
 
-function trimText(value: string | undefined, maxLength: number) {
-  const text = value?.trim() || '';
+function trimText(value: unknown, maxLength: number) {
+  const text = typeof value === 'string' ? value.trim() : '';
   return text.length > maxLength ? `${text.slice(0, maxLength).replace(/[，；、\s]+$/,'')}……` : text;
 }
 
@@ -260,6 +274,7 @@ export async function POST(request: Request) {
     '默认控制在180至320个汉字、两到四个短段落。除非用户明确要求详细分析，否则不要写标题、编号清单或完整报告；只挑最相关的两三张牌来说明。',
     '结尾可以自然地问一个贴近处境的小问题，但不要固定使用“你可以思考”之类的模板句。',
     '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
+    '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
     agentEvidence(body.context, tools),
     contextText(body.context),
   ].join('\n\n');

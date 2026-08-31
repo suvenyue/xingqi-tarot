@@ -2585,3 +2585,33 @@ body {
   .tarot-card,.tarot-card.revealed::before,.tarot-card.revealed .card-face,.tarot-card:not(.revealed) .card-back,.picker-card.center-card,.picker-card.selected,.picker-card.selected .picker-card-inner,.picker-card.selected::before,.picker-card.selected::after { animation: none !important; }
   .card-face.is-reversed { transform: rotate(180deg); }
 }
+
+.cloud-account-chip { position: fixed; z-index: 45; top: 94px; right: 22px; display: grid; grid-template-columns: 28px minmax(0,1fr) auto; align-items: center; gap: 9px; max-width: 310px; padding: 9px 10px; border: 1px solid rgba(225,190,112,.17); border-radius: 14px; background: rgba(10,8,20,.91); color: #95889e; box-shadow: 0 14px 38px rgba(0,0,0,.27); backdrop-filter: blur(15px); }
+.cloud-account-chip > svg { width: 17px; color: #8f82a1; }
+.cloud-account-chip.signed-in > svg { color: #77b99b; filter: drop-shadow(0 0 7px rgba(119,185,155,.28)); }
+.cloud-account-chip span,.cloud-account-chip b,.cloud-account-chip small { display: block; min-width: 0; }
+.cloud-account-chip b { color: #cfc1d0; font: 500 11px/1.2 var(--font-serif); }
+.cloud-account-chip small { overflow: hidden; margin-top: 3px; color: #746a7d; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-account-chip a { min-height: 32px; display: inline-flex; align-items: center; gap: 4px; padding: 0 9px; border: 1px solid rgba(225,190,112,.15); border-radius: 999px; color: #c7ab70; font-size: 9px; text-decoration: none; }
+.cloud-account-chip a svg { width: 12px; }
+.agent-page-stat em { display: block; overflow: hidden; margin-top: 9px; color: #766d7d; font: normal 8px/1.35 var(--font-serif); text-overflow: ellipsis; white-space: nowrap; }
+.agent-page-stat em.cloud-ready { color: #83b59f; }
+.agent-page-stat em.cloud-syncing,.agent-page-stat em.cloud-checking { color: #c2a96f; }
+.agent-page-stat em.cloud-error { color: #c88f8f; }
+.agent-memory-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+.agent-memory-toolbar span { overflow: hidden; color: #726a7b; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-memory-toolbar button { flex: 0 0 auto; min-height: 30px; padding: 0 8px; border: 1px solid rgba(205,112,123,.14); border-radius: 8px; background: rgba(117,45,61,.08); color: #b67c86; font-size: 9px; cursor: pointer; }
+.agent-memory-toolbar button:disabled { opacity: .35; cursor: not-allowed; }
+.ai-message-evidence ul { display: grid; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
+.ai-message-evidence li { padding: 7px 8px; border-left: 2px solid rgba(138,165,211,.23); background: rgba(15,20,38,.35); color: #94899b; font: 10px/1.6 var(--font-serif); }
+
+@media (max-width: 760px) {
+  .cloud-account-chip { top: 76px; right: 10px; grid-template-columns: 24px auto; max-width: 190px; padding: 7px 8px; }
+  .cloud-account-chip > span { display: none; }
+  .cloud-account-chip a { min-height: 34px; font-size: 10px; }
+  .view-agent .agent-chat-window { max-height: 52svh; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .view-agent .ai-chat-composer { position: sticky; z-index: 24; bottom: calc(env(safe-area-inset-bottom,0px) + 8px); margin: 12px -5px 0; padding: 9px; border: 1px solid rgba(225,190,112,.14); border-radius: 15px; background: rgba(10,8,20,.96); box-shadow: 0 -12px 32px rgba(2,2,8,.48); backdrop-filter: blur(18px); }
+  .view-agent .agent-workflow-panel,.view-agent .agent-capability-lab { content-visibility: auto; contain-intrinsic-size: 1px 520px; }
+  .view-agent .twinkle-star:nth-child(n+14) { display: none; }
+  .view-agent .ai-message-evidence li { font-size: 11px; }
+}
