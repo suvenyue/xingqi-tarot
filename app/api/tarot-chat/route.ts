@@ -20,6 +20,15 @@ type TarotContext = {
   connections?: string[];
   actions?: { doNow?: string; avoid?: string; watch?: string } | null;
   energy?: string;
+  memory?: { enabled?: boolean; note?: string; patterns?: string } | null;
+  journal?: { date?: string; initial?: string; outcome?: string; reflection?: string } | null;
+  comparisons?: Array<{
+    date?: string;
+    question?: string;
+    spread?: string;
+    cards?: string[];
+    reflection?: string;
+  }>;
 };
 
 type RequestBody = {
@@ -29,7 +38,7 @@ type RequestBody = {
   context?: TarotContext;
 };
 
-type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'actions' | 'memory';
+type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'actions' | 'memory' | 'journal' | 'compare';
 
 const STYLE_PROMPTS = {
   gentle: '像一个温柔、熟悉用户的朋友：先回应感受，再给一两个真正有用的提醒。',
@@ -95,6 +104,9 @@ function contextText(context: TarotContext | undefined) {
     Array.isArray(context?.connections) && context.connections.length ? `关键牌组联系：\n${context.connections.slice(0, 7).map((item) => item.slice(0, 900)).join('\n')}` : '',
     context?.actions ? `行动建议：适合做——${context.actions.doNow?.slice(0, 700) || '无'}；暂时避免——${context.actions.avoid?.slice(0, 700) || '无'}；接下来观察——${context.actions.watch?.slice(0, 700) || '无'}` : '',
     context?.energy ? `能量结构：${context.energy.slice(0, 900)}` : '',
+    context?.memory?.enabled && (context.memory.note || context.memory.patterns) ? `用户主动开启的长期记忆：${context.memory.note?.slice(0, 1200) || '无补充背景'}；历史模式：${context.memory.patterns?.slice(0, 800) || '暂无足够记录'}` : '',
+    context?.journal ? `本条塔罗日记：日期 ${context.journal.date || '未知'}；当时想法：${context.journal.initial?.slice(0, 700) || '未记录'}；后续发生：${context.journal.outcome?.slice(0, 700) || '未记录'}；现在回看：${context.journal.reflection?.slice(0, 700) || '未记录'}` : '',
+    Array.isArray(context?.comparisons) && context.comparisons.length > 1 ? `对比记录：\n${context.comparisons.slice(0, 3).map((item, index) => `${index + 1}. ${item.date || '未知日期'}｜${item.spread || '未知牌阵'}｜${item.question || '未写问题'}｜${item.cards?.join('、') || '无牌面'}｜回看：${item.reflection || '未记录'}`).join('\n')}` : '',
   ].filter(Boolean).join('\n\n');
 }
 
@@ -102,7 +114,10 @@ function selectAgentTools(message: string, body: RequestBody): AgentToolId[] {
   const tools: AgentToolId[] = ['spread', 'meanings', 'patterns'];
   if ((body.context?.cards?.length || 0) > 1) tools.push('links');
   if (/怎么|应该|建议|行动|避免|接下来|选择|做什么/.test(message)) tools.push('actions');
-  if ((body.history?.length || 0) > 0) tools.push('memory');
+  if (body.context?.memory?.enabled && (body.context.memory.note || body.context.memory.patterns)) tools.push('memory');
+  if (body.context?.journal && Object.values(body.context.journal).some(Boolean)) tools.push('journal');
+  if ((body.context?.comparisons?.length || 0) > 1) tools.push('compare');
+  if ((body.history?.length || 0) > 0 && !tools.includes('memory')) tools.push('memory');
   return tools;
 }
 
@@ -114,7 +129,9 @@ function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) 
     tools.includes('patterns') && context?.energy ? `[工具·结构分析] ${context.energy}` : '',
     tools.includes('links') && context?.connections?.length ? `[工具·组合关系] ${context.connections.slice(0, 5).join('；')}` : '',
     tools.includes('actions') && context?.actions ? `[工具·行动建议] 适合：${context.actions.doNow || '暂无'}；避免：${context.actions.avoid || '暂无'}；观察：${context.actions.watch || '暂无'}` : '',
-    tools.includes('memory') ? '[工具·对话记忆] 已读取本次牌阵最近的对话内容。' : '',
+    tools.includes('memory') ? `[工具·长期记忆] ${context?.memory?.enabled ? `${context.memory.note || '无用户补充背景'}；${context.memory.patterns || '暂无历史模式'}` : '已读取本次牌阵最近的对话内容。'}` : '',
+    tools.includes('journal') && context?.journal ? `[工具·日记复盘] 当时想法：${context.journal.initial || '未记录'}；后续发生：${context.journal.outcome || '未记录'}；现在回看：${context.journal.reflection || '未记录'}` : '',
+    tools.includes('compare') && context?.comparisons?.length ? `[工具·牌阵对比] ${context.comparisons.slice(0, 3).map((item) => `${item.date || '未知日期'}的${item.spread || '牌阵'}：${item.cards?.join('、') || '无牌面'}`).join('；')}` : '',
   ].filter(Boolean);
   return evidence.join('\n');
 }
@@ -132,6 +149,16 @@ function localAgentText(message: string, context: TarotContext | undefined) {
   const wantsLinks = /联系|关系|矛盾|组合|互相|主线/.test(message);
   const wantsAction = /怎么|应该|建议|行动|避免|接下来|选择|做什么/.test(message);
   const wantsReversed = /逆位|阻碍|卡住|困难/.test(message);
+  const wantsJournal = /日记|复盘|后来|回看|发生/.test(message);
+  const wantsCompare = /对比|比较|变化|重复|几次|多次/.test(message);
+
+  if (wantsCompare && (context?.comparisons?.length || 0) > 1) {
+    const records = context?.comparisons || [];
+    return `${lead}\n\n这 ${records.length} 次记录分别出现了：${records.map((item) => `${item.date || '某次'}的${item.cards?.join('、') || '未记录牌面'}`).join('；')}。先看重复牌、正逆位变化和结果牌方向，再把它们与真实发生的事情核对；重复出现不等于命运注定，更可能表示同一课题还在被处理。`;
+  }
+  if (wantsJournal && context?.journal) {
+    return `${lead}\n\n你当时写下的是“${trimText(context.journal.initial, 110) || '还没有记录第一感受'}”，后来发生的是“${trimText(context.journal.outcome, 120) || '还没有补写后续'}”。把牌面和事实分开看：已经发生的部分可以验证理解，没发生的部分不必硬套进牌义。`;
+  }
 
   if (wantsLinks && context?.connections?.length) {
     return `${lead}\n\n${trimText(context.connections.slice(0, 2).join('；'), 260)}\n\n先不要把每张牌拆开看，真正值得观察的是它们共同指向的变化。`;

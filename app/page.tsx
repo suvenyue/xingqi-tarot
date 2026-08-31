@@ -441,6 +441,7 @@ type ChatMessage = {
   createdAt: number;
 };
 type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
+type AgentMemory = { enabled: boolean; note: string };
 
 function withOrientation(card: TarotCard, reversed: boolean): DrawnCard {
   const { reversed: reversedKeywords, ...cardData } = card;
@@ -450,6 +451,7 @@ function withOrientation(card: TarotCard, reversed: boolean): DrawnCard {
 const HISTORY_KEY = 'xingqi-tarot-readings-v1';
 const AI_CHAT_KEY = 'xingqi-tarot-ai-chats-v1';
 const AI_USAGE_KEY = 'xingqi-tarot-ai-usage-v1';
+const AGENT_MEMORY_KEY = 'xingqi-tarot-agent-memory-v1';
 const DAILY_TAROT_KEY = 'xingqi-tarot-daily-v1';
 const DAILY_CHAT_LIMIT = 8;
 const MAX_HISTORY_ITEMS = 120;
@@ -468,6 +470,8 @@ const agentToolLabels: Record<string, string> = {
   links: '追踪牌组联系',
   actions: '生成行动建议',
   memory: '读取本轮记忆',
+  journal: '复盘塔罗日记',
+  compare: '对比历史牌阵',
 };
 const defaultAgentTools = ['读取当前牌阵','检索牌义证据','分析整体结构','本地解读兜底'];
 
@@ -839,6 +843,11 @@ export default function Home() {
   const [chatRemaining, setChatRemaining] = useState(DAILY_CHAT_LIMIT);
   const [agentMode, setAgentMode] = useState<AgentMode>('ready');
   const [agentTools, setAgentTools] = useState<string[]>(defaultAgentTools);
+  const [agentMemoryEnabled, setAgentMemoryEnabled] = useState(false);
+  const [agentMemoryNote, setAgentMemoryNote] = useState('');
+  const [agentSourceId, setAgentSourceId] = useState<string | null>(null);
+  const [agentJournalEnabled, setAgentJournalEnabled] = useState(false);
+  const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const [skyMode, setSkyMode] = useState<SkyMode>('auto');
   const [skyPeriod, setSkyPeriod] = useState<SkyPeriod>('night');
   const fanRef = useRef<HTMLDivElement>(null);
@@ -901,6 +910,43 @@ export default function Home() {
 
   const libraryCard = libraryCards.find((card) => card.id === libraryCardId) || libraryCards[0] || cards[0];
   const libraryOrigin = cardOrigin(libraryCard);
+  const activeAgentRecord = useMemo(() => {
+    if (!agentSourceId) return null;
+    const record = history.find((item) => item.id === agentSourceId);
+    if (!record) return null;
+    const signature = record.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
+    return record.spread === spread && signature === drawnSignature ? record : null;
+  }, [agentSourceId, history, spread, drawnSignature]);
+  const comparisonRecords = useMemo(
+    () => comparisonIds.map((id) => history.find((record) => record.id === id)).filter(Boolean) as SavedReading[],
+    [comparisonIds, history],
+  );
+  const personalPatterns = useMemo(() => {
+    const recent = history.slice(0,20);
+    const cardCounts = new Map<number, number>();
+    const spreadCounts = new Map<Spread, number>();
+    let totalCards = 0;
+    let reversedCards = 0;
+    recent.forEach((record) => {
+      spreadCounts.set(record.spread,(spreadCounts.get(record.spread) || 0) + 1);
+      record.cards.forEach((entry) => {
+        cardCounts.set(entry.id,(cardCounts.get(entry.id) || 0) + 1);
+        totalCards += 1;
+        if (entry.reversed) reversedCards += 1;
+      });
+    });
+    const repeatedCards = [...cardCounts.entries()]
+      .filter(([,count]) => count > 1)
+      .sort((first,second) => second[1] - first[1])
+      .slice(0,3)
+      .map(([id,count]) => `${cards.find((card) => card.id === id)?.name || '未知牌'}×${count}`);
+    const dominantSpread = [...spreadCounts.entries()].sort((first,second) => second[1] - first[1])[0];
+    const reversedRate = totalCards ? Math.round(reversedCards / totalCards * 100) : 0;
+    const text = recent.length
+      ? `最近 ${recent.length} 次记录中，${repeatedCards.length ? `重复牌为 ${repeatedCards.join('、')}` : '暂未出现明显重复牌'}；最常使用${dominantSpread ? spreadDefinitions[dominantSpread[0]].name : '暂无牌阵'}；逆位比例约 ${reversedRate}%。`
+      : '暂无足够历史记录。';
+    return { recentCount: recent.length, repeatedCards, reversedRate, dominantSpread: dominantSpread ? spreadDefinitions[dominantSpread[0]].name : '暂无', text };
+  }, [history]);
   const dailyDate = localDateKey();
   const todayDailyEntry = dailyEntries.find((entry) => entry.date === dailyDate);
   const todayDailyCard = todayDailyEntry
@@ -969,6 +1015,17 @@ export default function Home() {
       setChatRemaining(Math.max(0, DAILY_CHAT_LIMIT - used));
     } catch {
       setChatRemaining(DAILY_CHAT_LIMIT);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const memory = JSON.parse(localStorage.getItem(AGENT_MEMORY_KEY) || '{}') as Partial<AgentMemory>;
+      setAgentMemoryEnabled(memory.enabled === true);
+      setAgentMemoryNote(typeof memory.note === 'string' ? memory.note.slice(0,1200) : '');
+    } catch {
+      setAgentMemoryEnabled(false);
+      setAgentMemoryNote('');
     }
   }, []);
 
@@ -1221,6 +1278,27 @@ export default function Home() {
     saveChat(chatMessages, style);
   }
 
+  function saveAgentMemory(enabled: boolean, note: string) {
+    setAgentMemoryEnabled(enabled);
+    setAgentMemoryNote(note);
+    try {
+      localStorage.setItem(AGENT_MEMORY_KEY, JSON.stringify({ enabled, note } satisfies AgentMemory));
+    } catch {
+      // The controls remain usable even if this browser blocks local storage.
+    }
+  }
+
+  function toggleComparisonReading(id: string) {
+    setComparisonIds((current) => {
+      if (current.includes(id)) return current.filter((item) => item !== id);
+      if (current.length >= 3) {
+        showNotice('一次最多对比 3 条记录');
+        return current;
+      }
+      return [...current,id];
+    });
+  }
+
   function clearChat() {
     setChatMessages([]);
     setChatInput('');
@@ -1294,6 +1372,27 @@ export default function Home() {
             energy: structure
               ? `大阿卡纳 ${structure.majorCount}/${drawn.length}；正位 ${drawn.length - structure.reversedCount}，逆位 ${structure.reversedCount}；主导元素 ${structure.dominantLabel}；主线：${structure.mainline}`
               : '',
+            memory: agentMemoryEnabled ? {
+              enabled: true,
+              note: agentMemoryNote.trim(),
+              patterns: personalPatterns.text,
+            } : { enabled: false },
+            journal: agentJournalEnabled && activeAgentRecord ? {
+              date: formatDiaryDate(activeAgentRecord.createdAt),
+              initial: activeAgentRecord.notes?.initial || '',
+              outcome: activeAgentRecord.notes?.outcome || '',
+              reflection: activeAgentRecord.notes?.reflection || '',
+            } : null,
+            comparisons: comparisonRecords.map((record) => ({
+              date: formatDiaryDate(record.createdAt),
+              question: record.question,
+              spread: spreadDefinitions[record.spread].name,
+              cards: record.cards.map((entry) => {
+                const card = cards.find((item) => item.id === entry.id);
+                return `${card?.name || '未知牌'}${entry.reversed ? '·逆位' : '·正位'}`;
+              }),
+              reflection: record.notes?.reflection || record.notes?.outcome || '',
+            })),
           },
         }),
       });
@@ -1431,6 +1530,7 @@ export default function Home() {
     setChoiceOptionA(record.optionA || restoredChoice?.optionA || '');
     setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
     setDrawn(restored);
+    setAgentSourceId(record.id);
     setIsSharedReading(false);
     setView('reading');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1448,6 +1548,8 @@ export default function Home() {
     setChoiceOptionA(record.optionA || restoredChoice?.optionA || '');
     setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
     setDrawn(restored);
+    setAgentSourceId(record.id);
+    setAgentJournalEnabled(false);
     setIsSharedReading(false);
     setView('agent');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1476,6 +1578,8 @@ export default function Home() {
       return next;
     });
     if (openDiaryId === id) setOpenDiaryId(null);
+    if (agentSourceId === id) setAgentSourceId(null);
+    setComparisonIds((current) => current.filter((item) => item !== id));
   }
 
   function updateDiaryNote(id: string, field: 'initial' | 'outcome' | 'reflection', value: string) {
@@ -2691,6 +2795,37 @@ export default function Home() {
                       ['三步行动计划','把这组牌的建议拆成今天、本周和接下来一个月的行动。','03'],
                       ['现实验证信号','接下来要观察哪些现实信号，才能判断趋势是否正在发生？','04'],
                     ].map(([title,prompt,index]) => <button type="button" key={title} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}><small>{index}</small><span><b>{title}</b><em>{prompt}</em></span><ChevronRight /></button>)}
+                  </div>
+                </section>
+
+                <section className="agent-capability-lab" aria-labelledby="agent-lab-title">
+                  <div className="agent-lab-heading"><div><span>04 · PERSONAL CONTEXT</span><h2 id="agent-lab-title">让智能体真正理解你的变化</h2></div><small>所有设置仅保存在当前设备</small></div>
+                  <div className="agent-capability-grid">
+                    <article className="agent-memory-card">
+                      <div className="agent-capability-title"><span>长期记忆</span><button type="button" role="switch" aria-checked={agentMemoryEnabled} className={agentMemoryEnabled ? 'active' : ''} onClick={() => saveAgentMemory(!agentMemoryEnabled,agentMemoryNote)}><i />{agentMemoryEnabled ? '已开启' : '未开启'}</button></div>
+                      <p>主动告诉智能体需要长期记住的背景。关闭后，内容仍留在设备中，但不会发送给模型。</p>
+                      <Textarea value={agentMemoryNote} onChange={(event) => saveAgentMemory(agentMemoryEnabled,event.target.value.slice(0,1200))} placeholder="例如：我正在考虑转行；关系中的 TA 用代号 A；我更希望得到直接建议……" aria-label="希望智能体长期记住的背景" />
+                      <div className="agent-pattern-snapshot"><span>历史模式</span><b>{personalPatterns.repeatedCards.length ? personalPatterns.repeatedCards.join(' · ') : '暂无重复牌'}</b><small>{personalPatterns.recentCount} 次记录 · 逆位约 {personalPatterns.reversedRate}% · 常用 {personalPatterns.dominantSpread}</small></div>
+                    </article>
+
+                    <article className="agent-journal-card">
+                      <div className="agent-capability-title"><span>日记复盘</span><button type="button" role="switch" aria-checked={agentJournalEnabled} className={agentJournalEnabled ? 'active' : ''} disabled={!activeAgentRecord} onClick={() => setAgentJournalEnabled((current) => !current)}><i />{agentJournalEnabled ? '允许读取' : '不读取'}</button></div>
+                      {activeAgentRecord ? <>
+                        <p>将这次牌面和后来真正发生的事情分开核对，减少事后硬套牌义。</p>
+                        <div className="agent-journal-status"><span className={activeAgentRecord.notes?.initial?.trim() ? 'done' : ''}>当时想法</span><span className={activeAgentRecord.notes?.outcome?.trim() ? 'done' : ''}>后续发生</span><span className={activeAgentRecord.notes?.reflection?.trim() ? 'done' : ''}>现在回看</span></div>
+                        <button type="button" className="agent-capability-action" disabled={!agentJournalEnabled || isChatStreaming || chatRemaining <= 0} onClick={() => void sendChat('请结合我的日记做一次复盘：哪些牌义得到了现实验证，哪些没有发生，我当时可能忽略了什么？')}>开始日记复盘<ChevronRight /></button>
+                      </> : <div className="agent-capability-empty"><p>当前牌阵还没有连接到日记记录。</p><button type="button" onClick={() => history[0] && loadAgentReading(history[0])} disabled={!history.length}>选择最近日记</button></div>}
+                    </article>
+
+                    <article className="agent-compare-card">
+                      <div className="agent-capability-title"><span>多次牌阵对比</span><small>已选 {comparisonIds.length}／3</small></div>
+                      <p>选择两至三次记录，比较重复牌、元素变化、正逆位和行动方向。</p>
+                      <div className="agent-compare-list">
+                        {history.slice(0,5).map((record) => <label key={`compare-${record.id}`} className={comparisonIds.includes(record.id) ? 'active' : ''}><input type="checkbox" checked={comparisonIds.includes(record.id)} onChange={() => toggleComparisonReading(record.id)} /><i /><span><b>{spreadDefinitions[record.spread].name}</b><small>{formatDiaryDate(record.createdAt)}</small></span></label>)}
+                        {!history.length && <em>至少保存两次抽牌后即可使用。</em>}
+                      </div>
+                      <button type="button" className="agent-capability-action" disabled={comparisonIds.length < 2 || isChatStreaming || chatRemaining <= 0} onClick={() => void sendChat('请对比我选中的这些历史牌阵：找出重复出现的课题、正逆位或元素变化，以及我的行动方向发生了什么改变。')}>开始对比 {comparisonIds.length >= 2 ? `${comparisonIds.length} 次记录` : ''}<ChevronRight /></button>
+                    </article>
                   </div>
                 </section>
 
