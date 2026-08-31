@@ -45,6 +45,7 @@ type TarotContext = {
 type RequestBody = {
   message?: string;
   style?: 'gentle' | 'analytical' | 'intuitive' | 'direct';
+  length?: 'brief' | 'standard' | 'deep';
   history?: ChatMessage[];
   context?: TarotContext;
 };
@@ -58,8 +59,14 @@ const STYLE_PROMPTS = {
   direct: '像一个愿意说真话的朋友。直接指出矛盾和盲点，可以坦率，但不要审判、训话或吓人。',
 } as const;
 
+const LENGTH_PROMPTS = {
+  brief: { instruction: '用100至200个汉字回答，只讲最关键的一张牌或一组关系，最多两个短段落。', maxTokens: 500 },
+  standard: { instruction: '用300至500个汉字回答，讲清核心判断、主要牌位联系和一个现实建议，保持自然对话感。', maxTokens: 1100 },
+  deep: { instruction: '进行完整深度解读，通常700至1200个汉字。覆盖各牌位、关键组合、元素与正逆位结构、主线转折和行动建议；可以使用短标题，但不要堆砌套话。', maxTokens: 2400 },
+} as const;
+
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const SERVER_LIMIT = 12;
+const SERVER_LIMIT = 50;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function clientKey(request: Request) {
@@ -159,7 +166,7 @@ function trimText(value: unknown, maxLength: number) {
   return text.length > maxLength ? `${text.slice(0, maxLength).replace(/[，；、\s]+$/,'')}……` : text;
 }
 
-function localAgentText(message: string, context: TarotContext | undefined) {
+function localAgentBase(message: string, context: TarotContext | undefined) {
   const cards = Array.isArray(context?.cards) ? context.cards : [];
   const reversed = cards.filter((card) => card.orientation === '逆位');
   const lead = trimText(context?.verdict, 150)
@@ -195,6 +202,25 @@ function localAgentText(message: string, context: TarotContext | undefined) {
   return `${lead}${context?.synthesis ? `\n\n${trimText(context.synthesis, 280)}` : ''}${context?.actions?.watch ? `\n\n接下来可以观察：${trimText(context.actions.watch, 110)}` : ''}`;
 }
 
+function localAgentText(message: string, context: TarotContext | undefined, length: keyof typeof LENGTH_PROMPTS = 'standard') {
+  const base = localAgentBase(message, context);
+  if (length === 'brief') return trimText(base, 190);
+  if (length === 'standard') {
+    const action = context?.actions?.doNow ? `\n\n更实际一点，现在可以先做：${trimText(context.actions.doNow, 130)}` : '';
+    return `${base}${base.length < 260 ? action : ''}`;
+  }
+  const cards = Array.isArray(context?.cards) ? context.cards : [];
+  const cardSection = cards.map((card, index) => `${index + 1}. ${card.position || '牌位'}的${card.name || '未知牌'}·${card.orientation || '方向未知'}：${trimText(card.meaning || card.keywords, 150)}`).join('\n');
+  const comboSection = (context?.combinations || []).slice(0,5).map((item) => `- ${item.title || '组合'}：${trimText(`${item.evidence || ''}${item.meaning || ''}`, 220)}`).join('\n');
+  return [
+    `先说重点：${trimText(context?.verdict, 220) || trimText(base, 220)}`,
+    cardSection ? `逐张放回牌位看\n${cardSection}` : '',
+    comboSection ? `牌与牌之间\n${comboSection}` : '',
+    context?.energy ? `整体结构\n${trimText(context.energy, 260)}` : '',
+    context?.actions ? `落到现实里\n现在适合：${trimText(context.actions.doNow, 180)}\n暂时避免：${trimText(context.actions.avoid, 180)}\n继续观察：${trimText(context.actions.watch, 180)}` : '',
+  ].filter(Boolean).join('\n\n');
+}
+
 function agentHeaders(tools: AgentToolId[], mode: 'model' | 'local', remaining: number) {
   return {
     'Content-Type': 'text/plain; charset=utf-8',
@@ -206,8 +232,8 @@ function agentHeaders(tools: AgentToolId[], mode: 'model' | 'local', remaining: 
   };
 }
 
-function localAgentResponse(message: string, context: TarotContext | undefined, tools: AgentToolId[], remaining: number) {
-  return new Response(localAgentText(message, context), {
+function localAgentResponse(message: string, context: TarotContext | undefined, tools: AgentToolId[], remaining: number, length: keyof typeof LENGTH_PROMPTS) {
+  return new Response(localAgentText(message, context, length), {
     status: 200,
     headers: agentHeaders(tools, 'local', remaining),
   });
@@ -271,6 +297,8 @@ export async function POST(request: Request) {
   }
 
   const message = body.message?.trim().slice(0, 2000) || '';
+  const length = body.length && body.length in LENGTH_PROMPTS ? body.length : 'standard';
+  const lengthConfig = LENGTH_PROMPTS[length];
   if (!message) return Response.json({ error: '请先输入你想继续询问的内容。' }, { status: 400 });
   if (!body.context?.cards?.length) return Response.json({ error: '请先完成一次抽牌，再开始牌阵对话。' }, { status: 400 });
 
@@ -283,7 +311,7 @@ export async function POST(request: Request) {
   }
 
   const tools = selectAgentTools(message, body);
-  if (!apiKey) return localAgentResponse(message, body.context, tools, quota.remaining);
+  if (!apiKey) return localAgentResponse(message, body.context, tools, quota.remaining, length);
 
   const style = body.style && body.style in STYLE_PROMPTS ? body.style : 'gentle';
   const instructions = [
@@ -294,9 +322,10 @@ export async function POST(request: Request) {
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
     '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
     '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
+    '标为“澄清牌”的牌只用于补充它对应的具体疑问。必须先以原牌阵为主，再说明澄清牌修正了什么、没有改变什么；不得让澄清牌覆盖原牌阵。',
     '少用抽象名词和成串形容词。多用短句、具体动词和日常表达；能说“你其实已经很累了”，就不要说“你正处于能量失衡的状态”。',
     '不要把每段都写成“结论＋解释＋建议”的固定模板，不要连续使用“你可能”“这意味着”“提醒你”。允许自然停顿，也允许只把一个重点讲透。',
-    '默认控制在120至240个汉字、两到三个短段落。除非用户明确要求详细分析，否则不要写标题、编号清单或完整报告，只挑最相关的一两张牌说清楚。',
+    lengthConfig.instruction,
     '结尾不必强行提问，也不要固定使用“你可以思考”“希望这能帮助你”之类的客服式句子。确实需要用户补充信息时，再自然地问一句。',
     '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
     '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
@@ -310,7 +339,7 @@ export async function POST(request: Request) {
   const requestPayload = (stream: boolean) => JSON.stringify({
     model,
     messages: [{ role: 'system', content: instructions }, ...input],
-    max_tokens: 1200,
+    max_tokens: lengthConfig.maxTokens,
     stream,
   });
 
@@ -329,7 +358,7 @@ export async function POST(request: Request) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, max_tokens: partial ? 700 : 1200, stream: false }),
+        body: JSON.stringify({ model, messages, max_tokens: partial ? Math.min(900, lengthConfig.maxTokens) : lengthConfig.maxTokens, stream: false }),
         signal: retryController.signal,
       });
       if (!response.ok) return '';
@@ -363,7 +392,7 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!upstream) return localAgentResponse(message, body.context, tools, quota.remaining);
+  if (!upstream) return localAgentResponse(message, body.context, tools, quota.remaining, length);
 
   if (!upstream.ok) {
     const upstreamDetail = (await upstream.text().catch(() => '')).slice(0, 500);
@@ -372,14 +401,14 @@ export async function POST(request: Request) {
       model,
       detail: upstreamDetail,
     });
-    return localAgentResponse(message, body.context, tools, quota.remaining);
+    return localAgentResponse(message, body.context, tools, quota.remaining, length);
   }
 
   const contentType = upstream.headers.get('content-type') || '';
   if (!upstream.body || contentType.includes('application/json')) {
     const payload = await upstream.json().catch(() => null);
     const completed = extractCompletedText(payload);
-    if (!completed) return localAgentResponse(message, body.context, tools, quota.remaining);
+    if (!completed) return localAgentResponse(message, body.context, tools, quota.remaining, length);
     return new Response(completed, {
       headers: agentHeaders(tools, 'model', quota.remaining),
     });
@@ -416,10 +445,10 @@ export async function POST(request: Request) {
   const finishStream = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (!emittedAny) {
       const retried = await retryCompletedText();
-      controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
+      controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length)}`));
     } else if (finishReason === 'length' || !replyLooksComplete(emittedText)) {
       const continued = await retryCompletedText(emittedText);
-      const supplement = continued || localAgentText(message, body.context);
+      const supplement = continued || localAgentText(message, body.context, length);
       controller.enqueue(encoder.encode(`\n\n${supplement}`));
     }
     controller.close();
@@ -451,10 +480,10 @@ export async function POST(request: Request) {
       } catch {
         if (!emittedAny) {
           const retried = await retryCompletedText();
-          controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
+          controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length)}`));
         } else {
           const continued = await retryCompletedText(emittedText);
-          controller.enqueue(encoder.encode(`\n\n${continued || localAgentText(message, body.context)}`));
+          controller.enqueue(encoder.encode(`\n\n${continued || localAgentText(message, body.context, length)}`));
         }
         controller.close();
       }

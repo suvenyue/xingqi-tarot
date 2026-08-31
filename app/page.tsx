@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeftRight, BookOpen, Bot, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Square, Sunrise, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, Bot, Check, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, Plus, RotateCcw, Save, Send, Shuffle, Sparkles, Square, Sunrise, Trash2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -404,6 +404,7 @@ const majorHealth = [
 ];
 
 type DrawnCard = Omit<TarotCard, 'reversed'> & { reversed: boolean; reversedKeywords: string };
+type ClarifierCard = DrawnCard & { purpose: string; createdAt: number };
 type AppView = 'daily' | 'reading' | 'library' | 'history' | 'agent';
 type LibraryFilter = 'all' | 'major' | 'wands' | 'cups' | 'swords' | 'pentacles' | 'court';
 type DiaryNotes = {
@@ -423,6 +424,7 @@ type SavedReading = {
   kind?: 'spread' | 'daily';
   dailyMood?: string;
   notes?: DiaryNotes;
+  clarifiers?: { id: number; reversed: boolean; purpose: string; createdAt: number }[];
 };
 
 type DailyEntry = {
@@ -434,7 +436,12 @@ type DailyEntry = {
 };
 
 type ChatStyle = 'gentle' | 'analytical' | 'intuitive' | 'direct';
+type ReplyLength = 'brief' | 'standard' | 'deep';
 type AgentMode = 'ready' | 'thinking' | 'model' | 'local';
+type PendingAgentAction =
+  | { type: 'clarifier'; title: string; description: string; purpose: string }
+  | { type: 'switch-spread'; title: string; description: string; spread: Spread }
+  | { type: 'redraw'; title: string; description: string };
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -444,7 +451,7 @@ type ChatMessage = {
   mode?: AgentMode;
   evidence?: string[];
 };
-type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
+type SavedChat = { style: ChatStyle; length?: ReplyLength; messages: ChatMessage[]; updatedAt: number };
 type AgentMemory = { enabled: boolean; note: string; updatedAt?: number };
 type GuidedPlan = {
   refinedQuestion: string;
@@ -497,7 +504,7 @@ const AI_CHAT_KEY = 'xingqi-tarot-ai-chats-v1';
 const AI_USAGE_KEY = 'xingqi-tarot-ai-usage-v1';
 const AGENT_MEMORY_KEY = 'xingqi-tarot-agent-memory-v1';
 const DAILY_TAROT_KEY = 'xingqi-tarot-daily-v1';
-const DAILY_CHAT_LIMIT = 8;
+const DAILY_CHAT_LIMIT = 50;
 const MAX_HISTORY_ITEMS = 120;
 const MAX_DAILY_ITEMS = 366;
 const dailyMoods = ['平静','轻盈','专注','疲惫','混乱'] as const;
@@ -506,6 +513,11 @@ const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string
   analytical: { name: '理性解析', note: '按牌位与证据清晰拆解', symbol: '◇' },
   intuitive: { name: '直觉灵感', note: '强调意象、共鸣与内在声音', symbol: '✦' },
   direct: { name: '直言提醒', note: '坦率指出矛盾、盲点和代价', symbol: '↗' },
+};
+const replyLengths: Record<ReplyLength, { name: string; note: string }> = {
+  brief: { name: '简短', note: '约100～200字' },
+  standard: { name: '标准', note: '约300～500字' },
+  deep: { name: '深度', note: '完整牌位与组合分析' },
 };
 const agentToolLabels: Record<string, string> = {
   spread: '读取当前牌阵',
@@ -881,6 +893,7 @@ export default function Home() {
   const [isHoldingMoon, setIsHoldingMoon] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
   const [chatStyle, setChatStyle] = useState<ChatStyle>('gentle');
+  const [replyLength, setReplyLength] = useState<ReplyLength>('standard');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatError, setChatError] = useState('');
@@ -894,6 +907,11 @@ export default function Home() {
   const [agentJournalEnabled, setAgentJournalEnabled] = useState(false);
   const [agentLabOpen, setAgentLabOpen] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [clarifiers, setClarifiers] = useState<ClarifierCard[]>([]);
+  const [clarifierDeck, setClarifierDeck] = useState<DrawnCard[]>([]);
+  const [clarifierPurpose, setClarifierPurpose] = useState('进一步确认当前问题');
+  const [isClarifierSelecting, setIsClarifierSelecting] = useState(false);
+  const [pendingAgentAction, setPendingAgentAction] = useState<PendingAgentAction | null>(null);
   const [guidedConcern, setGuidedConcern] = useState('');
   const [guidedPlan, setGuidedPlan] = useState<GuidedPlan | null>(null);
   const [isPlanningReading, setIsPlanningReading] = useState(false);
@@ -927,9 +945,13 @@ export default function Home() {
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
   const integrated = drawn.length ? integratedReading(drawn, spread, question) : null;
   const drawnSignature = drawn.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
-  const combinationInsights = useMemo<CombinationInsight[]>(
-    () => drawn.length ? buildCombinationInsights(drawn, spreadInfo.positions.map((position) => position.name)) : [],
-    [drawnSignature, spread],
+  const clarifierSignature = clarifiers.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}:${card.purpose}`).join('-');
+  const agentCombinationInsights = useMemo<CombinationInsight[]>(
+    () => drawn.length ? buildCombinationInsights(
+      [...drawn, ...clarifiers],
+      [...spreadInfo.positions.map((position) => position.name), ...clarifiers.map((card, index) => `澄清牌 ${index + 1}·${card.purpose}`)],
+    ) : [],
+    [drawnSignature, clarifierSignature, spread],
   );
   const fullSynthesis = integrated?.story || '';
   const oneSentenceSummary = integrated?.verdict || '';
@@ -1046,6 +1068,7 @@ export default function Home() {
     setChoiceOptionA(shared.optionA || sharedChoice?.optionA || '');
     setChoiceOptionB(shared.optionB || sharedChoice?.optionB || '');
     setDrawn(restored);
+    setClarifiers(restoreClarifierCards(shared));
     setIsSharedReading(true);
     setView('reading');
   }, []);
@@ -1166,6 +1189,7 @@ export default function Home() {
     if (!readingChatKey) {
       setChatMessages([]);
       setChatStyle('gentle');
+      setReplyLength('standard');
       return;
     }
     try {
@@ -1183,11 +1207,13 @@ export default function Home() {
         : [];
       setChatMessages(Array.isArray(saved?.messages) ? saved.messages.slice(-30) : plannedOpener);
       setChatStyle(saved?.style && saved.style in chatStyles ? saved.style : 'gentle');
+      setReplyLength(saved?.length && saved.length in replyLengths ? saved.length : 'standard');
     } catch {
       setChatMessages([]);
       setChatStyle('gentle');
+      setReplyLength('standard');
     }
-  }, [drawnSignature]);
+  }, [readingChatKey]);
 
   useEffect(() => {
     if (!chatMessages.length) return;
@@ -1398,11 +1424,11 @@ export default function Home() {
     return localDateKey();
   }
 
-  function saveChat(messages: ChatMessage[], style = chatStyle) {
+  function saveChat(messages: ChatMessage[], style = chatStyle, length = replyLength) {
     if (!readingChatKey) return;
     try {
       const chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string, SavedChat>;
-      chats[readingChatKey] = { style, messages: messages.slice(-30), updatedAt: Date.now() };
+      chats[readingChatKey] = { style, length, messages: messages.slice(-30), updatedAt: Date.now() };
       const trimmed = Object.fromEntries(
         Object.entries(chats)
           .sort(([, first], [, second]) => second.updatedAt - first.updatedAt)
@@ -1416,7 +1442,12 @@ export default function Home() {
 
   function chooseChatStyle(style: ChatStyle) {
     setChatStyle(style);
-    saveChat(chatMessages, style);
+    saveChat(chatMessages, style, replyLength);
+  }
+
+  function chooseReplyLength(length: ReplyLength) {
+    setReplyLength(length);
+    saveChat(chatMessages, chatStyle, length);
   }
 
   function saveAgentMemory(enabled: boolean, note: string) {
@@ -1471,6 +1502,9 @@ export default function Home() {
     setChoiceOptionA('');
     setChoiceOptionB('');
     setDrawn([]);
+    setClarifiers([]);
+    setPendingAgentAction(null);
+    setIsClarifierSelecting(false);
     setSelectionDeck([]);
     setSelectedCards([]);
     setIsSelecting(false);
@@ -1493,8 +1527,9 @@ export default function Home() {
 
   function currentAnswerEvidence() {
     const cardEvidence = drawn.slice(0, 7).map((card, index) => `${spreadInfo.positions[index]?.name || `牌位 ${index + 1}`}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
-    const combinationEvidence = combinationInsights.slice(0, 5).map((item) => `组合知识库｜${item.title}：${item.evidence}${item.meaning}`);
-    return [...cardEvidence, ...combinationEvidence];
+    const clarifierEvidence = clarifiers.map((card, index) => `澄清牌 ${index + 1}｜${card.purpose}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
+    const combinationEvidence = agentCombinationInsights.slice(0, 5).map((item) => `组合知识库｜${item.title}：${item.evidence}${item.meaning}`);
+    return [...cardEvidence, ...clarifierEvidence, ...combinationEvidence];
   }
 
   function toggleComparisonReading(id: string) {
@@ -1512,6 +1547,9 @@ export default function Home() {
     setChatMessages([]);
     setChatInput('');
     setChatError('');
+    setPendingAgentAction(null);
+    setIsClarifierSelecting(false);
+    setClarifierDeck([]);
     setAgentMode('ready');
     setAgentTools(defaultAgentTools);
     if (!readingChatKey) return;
@@ -1538,13 +1576,157 @@ export default function Home() {
     setChatRemaining(Math.max(0, DAILY_CHAT_LIMIT - used));
   }
 
+  function appendLocalAgentExchange(userText: string, assistantText: string, tools = ['识别站内操作']) {
+    const next: ChatMessage[] = [
+      ...chatMessages,
+      { id: crypto.randomUUID(), role: 'user', content: userText, createdAt: Date.now() },
+      { id: crypto.randomUUID(), role: 'assistant', content: assistantText, createdAt: Date.now(), tools, mode: 'local' },
+    ].slice(-30);
+    setChatMessages(next);
+    saveChat(next);
+    return next;
+  }
+
+  function cardIndexFromMessage(message: string) {
+    const chinese: Record<string, number> = { 一: 0, 二: 1, 三: 2, 四: 3, 五: 4, 六: 5, 七: 6, 八: 7, 九: 8, 十: 9, 十一: 10, 十二: 11, 十三: 12 };
+    const chineseMatch = message.match(/第([一二三四五六七八九十]{1,2})张/);
+    if (chineseMatch && chinese[chineseMatch[1]] !== undefined) return chinese[chineseMatch[1]];
+    const numberMatch = message.match(/第\s*(\d{1,2})\s*张/);
+    return numberMatch ? Math.max(0, Number(numberMatch[1]) - 1) : 0;
+  }
+
+  function spreadFromMessage(message: string): Spread | null {
+    const aliases: Array<[RegExp, Spread]> = [
+      [/年度|十二宫/, 'year'], [/凯尔特|十字/, 'celtic'], [/感情|关系牌阵/, 'relationship'],
+      [/二选一|选择牌阵/, 'choice'], [/事业|职业牌阵/, 'career'], [/三牌|三张牌/, 'three'], [/单牌|一张牌/, 'single'],
+    ];
+    return aliases.find(([pattern]) => pattern.test(message))?.[1] || null;
+  }
+
+  function handleAgentActionRequest(message: string) {
+    if (view !== 'agent') return false;
+    if (/(保存|写入).*(日记|记录)|把.*(对话|这次).*(存|记)/.test(message)) {
+      const next = appendLocalAgentExchange(message, '已经把这次牌阵和对话整理好了，现在写进塔罗日记。', ['保存塔罗日记']);
+      window.setTimeout(() => saveAgentSummary(next), 0);
+      return true;
+    }
+    if (/(打开|查看).*(牌库|百科)/.test(message)) {
+      const index = cardIndexFromMessage(message);
+      const target = [...drawn, ...clarifiers][index];
+      if (!target) {
+        appendLocalAgentExchange(message, `目前只有 ${drawn.length + clarifiers.length} 张牌，我找不到你说的那一张。`);
+        return true;
+      }
+      appendLocalAgentExchange(message, `我已经找到${target.name}${target.reversed ? '逆位' : '正位'}，现在带你去看它的牌面、来源和完整牌义。`, ['打开78张牌库']);
+      setLibraryCardId(target.id);
+      setLibraryQuery('');
+      setLibraryFilter('all');
+      setView('library');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return true;
+    }
+    if (/(澄清牌|补抽|再抽一张)/.test(message)) {
+      if (clarifiers.length >= 3) {
+        appendLocalAgentExchange(message, '这次已经有三张澄清牌了。再继续补抽会让主线变乱，我建议先把现有信息说清楚。');
+        return true;
+      }
+      const purpose = message.replace(/请|帮我|想|要|再|补抽|抽|一张|澄清牌|看看|。|！|？/g, '').trim() || '进一步确认当前问题';
+      setPendingAgentAction({ type: 'clarifier', title: '补抽一张澄清牌', description: '澄清牌会补充原牌阵，但不会替换任何原牌。确认后仍由你亲手选择。', purpose });
+      setChatMessages((current) => {
+        const next: ChatMessage[] = [...current, { id: crypto.randomUUID(), role: 'user', content: message, createdAt: Date.now() }].slice(-30);
+        saveChat(next);
+        return next;
+      });
+      return true;
+    }
+    const nextSpread = spreadFromMessage(message);
+    if (nextSpread && /(换|改|切换|使用).*(牌阵|三牌|单牌|凯尔特|十二宫|感情|事业|二选一)/.test(message)) {
+      setPendingAgentAction({ type: 'switch-spread', title: `切换为${spreadDefinitions[nextSpread].name}`, description: '切换牌阵会结束当前牌面的继续解读，但现有记录仍保留在塔罗日记。', spread: nextSpread });
+      setChatMessages((current) => {
+        const next: ChatMessage[] = [...current, { id: crypto.randomUUID(), role: 'user', content: message, createdAt: Date.now() }].slice(-30);
+        saveChat(next);
+        return next;
+      });
+      return true;
+    }
+    if (/(重新抽牌|重抽|重新洗牌)/.test(message)) {
+      setPendingAgentAction({ type: 'redraw', title: '保留问题并重新抽牌', description: '当前牌面不会被覆盖，已经保存的日记仍然可以查看。确认后会重新进入洗牌流程。' });
+      setChatMessages((current) => {
+        const next: ChatMessage[] = [...current, { id: crypto.randomUUID(), role: 'user', content: message, createdAt: Date.now() }].slice(-30);
+        saveChat(next);
+        return next;
+      });
+      return true;
+    }
+    return false;
+  }
+
+  function startClarifierSelection(purpose: string) {
+    const used = new Set([...drawn, ...clarifiers].map((card) => card.id));
+    const candidates = shuffledDeck().filter((card) => !used.has(card.id)).slice(0,12);
+    setClarifierPurpose(purpose || '进一步确认当前问题');
+    setClarifierDeck(candidates);
+    setIsClarifierSelecting(true);
+    setPendingAgentAction(null);
+  }
+
+  function chooseClarifier(card: DrawnCard) {
+    if (clarifiers.length >= 3 || clarifiers.some((item) => item.id === card.id)) return;
+    const clarifier: ClarifierCard = { ...card, purpose: clarifierPurpose, createdAt: Date.now() };
+    const nextClarifiers = [...clarifiers, clarifier].slice(0,3);
+    setClarifiers(nextClarifiers);
+    setIsClarifierSelecting(false);
+    setClarifierDeck([]);
+    if (activeAgentRecord) {
+      setHistory((current) => {
+        const next = current.map((record) => record.id === activeAgentRecord.id ? {
+          ...record,
+          clarifiers: nextClarifiers.map((item) => ({ id: item.id, reversed: item.reversed, purpose: item.purpose, createdAt: item.createdAt })),
+          notes: { ...record.notes, updatedAt: Date.now() },
+        } : record);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+        return next;
+      });
+    }
+    const meaning = clarifier.reversed ? clarifier.reversedMeaning : clarifier.uprightMeaning;
+    const nextMessages: ChatMessage[] = [...chatMessages, {
+      id: crypto.randomUUID(), role: 'assistant', createdAt: Date.now(), mode: 'local', tools: ['抽取澄清牌', '读取标准牌义'],
+      content: `你抽到的是${clarifier.name}·${clarifier.reversed ? '逆位' : '正位'}。它用来澄清“${clarifier.purpose}”。${meaning}`,
+    }].slice(-30);
+    setChatMessages(nextMessages);
+    saveChat(nextMessages);
+  }
+
+  function confirmAgentAction() {
+    const action = pendingAgentAction;
+    if (!action) return;
+    if (action.type === 'clarifier') {
+      startClarifierSelection(action.purpose);
+      return;
+    }
+    setPendingAgentAction(null);
+    if (action.type === 'switch-spread') {
+      changeSpread(action.spread);
+      setView('reading');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showNotice(`已切换为${spreadDefinitions[action.spread].name}`);
+      return;
+    }
+    setView('reading');
+    window.requestAnimationFrame(() => startRitual());
+  }
+
   async function sendChat(prefilled?: string, options?: { retry?: boolean }) {
     const lastUserIndex = options?.retry ? chatMessages.findLastIndex((item) => item.role === 'user') : -1;
     const retryMessage = lastUserIndex >= 0 ? chatMessages[lastUserIndex].content : '';
     const message = (prefilled ?? (retryMessage || chatInput)).trim();
     if (!message || isChatStreaming || !drawn.length) return;
+    if (!options?.retry && handleAgentActionRequest(message)) {
+      setChatInput('');
+      return;
+    }
     if (chatRemaining <= 0) {
-      setChatError('今天的 8 次 AI 对话已经用完，明天会自动恢复。');
+      setChatError(`今天的 ${DAILY_CHAT_LIMIT} 次 AI 对话已经用完，明天会自动恢复。`);
       return;
     }
 
@@ -1572,11 +1754,12 @@ export default function Home() {
         body: JSON.stringify({
           message,
           style: chatStyle,
+          length: replyLength,
           history: conversationSeed.slice(-8).map(({ role, content }) => ({ role, content })),
           context: {
             question,
             spread: { name: spreadInfo.name, positions: spreadInfo.positions.map((position) => position.name) },
-            cards: drawn.map((card, index) => {
+            cards: [...drawn.map((card, index) => {
               const guide = guideFor(card);
               const origin = cardOrigin(card);
               return {
@@ -1596,11 +1779,31 @@ export default function Home() {
                 domains: { love: guide.love, career: guide.career, money: guide.money, health: guide.health || '' },
                 origin: `${origin.historicalName}；${origin.waiteSmith}`,
               };
-            }),
+            }), ...clarifiers.map((card, index) => {
+              const guide = guideFor(card);
+              const origin = cardOrigin(card);
+              return {
+                id: card.id,
+                name: card.name,
+                englishName: card.en,
+                arcana: card.arcana === 'minor' ? '小阿卡纳' : '大阿卡纳',
+                suit: card.suitLabel || card.suit || '',
+                rank: card.rank || '',
+                element: card.element || '',
+                orientation: card.reversed ? '逆位' : '正位',
+                position: `澄清牌 ${index + 1}·${card.purpose}`,
+                keywords: card.reversed ? card.reversedKeywords : card.upright,
+                meaning: card.reversed ? card.reversedMeaning : card.uprightMeaning,
+                focus: `只用于澄清“${card.purpose}”，不得替换原牌阵结论`,
+                symbolism: visualSymbolism(card),
+                domains: { love: guide.love, career: guide.career, money: guide.money, health: guide.health || '' },
+                origin: `${origin.historicalName}；${origin.waiteSmith}`,
+              };
+            })],
             synthesis: fullSynthesis,
             verdict: integrated?.verdict || '',
             connections: integrated?.connections.map((connection) => `${connection.title}：${connection.body}`) || [],
-            combinations: combinationInsights.map((item) => ({
+            combinations: agentCombinationInsights.map((item) => ({
               title: item.title,
               cards: item.cards,
               evidence: item.evidence,
@@ -1743,6 +1946,9 @@ export default function Home() {
     setGuidedPlan(null);
     setSpread(nextSpread);
     setDrawn([]);
+    setClarifiers([]);
+    setPendingAgentAction(null);
+    setIsClarifierSelecting(false);
     if (nextSpread === 'choice') {
       const parsed = parseChoiceQuestion(question);
       setChoiceOptionA(parsed?.optionA || '');
@@ -1774,9 +1980,17 @@ export default function Home() {
       question,
       spread,
       cards: cardList.map((card) => ({ id: card.id, reversed: card.reversed })),
+      clarifiers: clarifiers.map((card) => ({ id: card.id, reversed: card.reversed, purpose: card.purpose, createdAt: card.createdAt })),
       optionA: spread === 'choice' ? choiceOptionA.trim() : undefined,
       optionB: spread === 'choice' ? choiceOptionB.trim() : undefined,
     };
+  }
+
+  function restoreClarifierCards(record: SavedReading): ClarifierCard[] {
+    return (record.clarifiers || []).slice(0,3).map((entry) => {
+      const card = cards.find((item) => item.id === entry.id);
+      return card ? { ...withOrientation(card, Boolean(entry.reversed)), purpose: entry.purpose || '进一步确认当前问题', createdAt: entry.createdAt || record.createdAt } : null;
+    }).filter(Boolean) as ClarifierCard[];
   }
 
   function persistReading(cardList = drawn) {
@@ -1807,6 +2021,7 @@ export default function Home() {
     setChoiceOptionA(record.optionA || restoredChoice?.optionA || '');
     setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
     setDrawn(restored);
+    setClarifiers(restoreClarifierCards(record));
     setAgentSourceId(record.id);
     setAgentJournalEnabled(false);
     setGuidedPlan(null);
@@ -1827,6 +2042,7 @@ export default function Home() {
     setChoiceOptionA(record.optionA || restoredChoice?.optionA || '');
     setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
     setDrawn(restored);
+    setClarifiers(restoreClarifierCards(record));
     setAgentSourceId(record.id);
     setAgentJournalEnabled(false);
     setGuidedPlan(null);
@@ -1851,8 +2067,8 @@ export default function Home() {
     }
   }
 
-  function saveAgentSummary() {
-    const usefulMessages = chatMessages.filter((item) => item.content.trim());
+  function saveAgentSummary(messages = chatMessages) {
+    const usefulMessages = messages.filter((item) => item.content.trim());
     if (!usefulMessages.some((item) => item.role === 'assistant')) {
       showNotice('还没有可以保存的智能体对话');
       return;
@@ -2116,6 +2332,9 @@ export default function Home() {
     setIsShuffling(true);
     setRitualStage('gathering');
     setDrawn([]);
+    setClarifiers([]);
+    setPendingAgentAction(null);
+    setIsClarifierSelecting(false);
     setSelectedCards([]);
     setIsSharedReading(false);
     setRevealBurst(false);
@@ -2249,6 +2468,10 @@ export default function Home() {
 
   function reset() {
     setDrawn([]);
+    setClarifiers([]);
+    setPendingAgentAction(null);
+    setIsClarifierSelecting(false);
+    setClarifierDeck([]);
     setQuestion('');
     setChoiceOptionA('');
     setChoiceOptionB('');
@@ -2264,6 +2487,29 @@ export default function Home() {
     setGuidedPlanError('');
     setMemorySuggestionDismissed(false);
     cancelMoonHold();
+  }
+
+  function renderAgentOperationPanels() {
+    return <>
+      {pendingAgentAction && <section className="agent-action-confirm" aria-live="polite">
+        <div className="agent-action-icon"><Sparkles aria-hidden="true" /></div>
+        <div><span>智能体准备执行</span><h4>{pendingAgentAction.title}</h4><p>{pendingAgentAction.description}</p>{pendingAgentAction.type === 'clarifier' && <small>本次澄清：{pendingAgentAction.purpose}</small>}</div>
+        <div className="agent-action-buttons"><button type="button" onClick={() => setPendingAgentAction(null)}><X />取消</button><button type="button" onClick={confirmAgentAction}><Check />确认执行</button></div>
+      </section>}
+
+      {isClarifierSelecting && <section className="agent-clarifier-picker" aria-label="选择澄清牌">
+        <div className="agent-clarifier-heading"><div><span>CLARIFYING CARD</span><h4>选择一张澄清牌</h4><p>它只补充“{clarifierPurpose}”，不会替换原牌阵。</p></div><button type="button" onClick={() => { setIsClarifierSelecting(false); setClarifierDeck([]); }}><X />暂不抽取</button></div>
+        <div className="agent-clarifier-deck" role="group" aria-label="十二张澄清牌背">
+          {clarifierDeck.map((card, index) => <button type="button" key={`clarifier-choice-${card.id}`} onClick={() => chooseClarifier(card)} aria-label={`选择第${index + 1}张澄清牌`}><span className="picker-card-inner"><span className="picker-sun">☀</span><span className="picker-seal">✦</span><span className="picker-moon">☾</span></span></button>)}
+        </div>
+      </section>}
+
+      {clarifiers.length > 0 && <section className="agent-clarifier-results" aria-label="已抽取的澄清牌">
+        <div className="agent-clarifier-results-heading"><div><span>澄清牌 · {clarifiers.length}/3</span><p>这些牌只修正对应问题，不会覆盖原牌阵。</p></div>{clarifiers.length < 3 && <button type="button" onClick={() => setPendingAgentAction({ type: 'clarifier', title: '再补抽一张澄清牌', description: '新牌会作为额外证据加入当前对话，确认后由你亲手选择。', purpose: '继续澄清当前牌阵尚未说清的部分' })}><Plus />再抽一张</button>}</div>
+        <div className="agent-clarifier-cards">{clarifiers.map((card, index) => <article key={`clarifier-result-${card.id}`}><div><img className={card.reversed ? 'is-reversed' : ''} src={cardImagePath(card)} alt={`${card.name}${card.reversed ? '逆位' : '正位'}牌面`} /></div><span>澄清牌 {index + 1}</span><b>{card.name} · {card.reversed ? '逆位' : '正位'}</b><small>{card.purpose}</small></article>)}</div>
+        <button className="agent-clarifier-analyze" type="button" onClick={() => void sendChat('请把刚补抽的澄清牌放回原牌阵中，说明它修正了哪一部分，以及没有改变什么。')} disabled={isChatStreaming || chatRemaining <= 0}><Sparkles />结合原牌阵解读澄清牌</button>
+      </section>}
+    </>;
   }
 
   useEffect(() => () => {
@@ -2792,7 +3038,7 @@ export default function Home() {
                 <div className="ai-chat-heading">
                   <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
                   <div>
-                    <span>XINGQI TAROT AGENT · V1</span>
+                    <span>XINGQI TAROT AGENT · V2</span>
                     <h3 id="ai-chat-title">星契塔罗智能体</h3>
                     <p>先调用牌阵、牌义与组合工具，再组织回答；模型不可用时自动切回本地解读。</p>
                   </div>
@@ -2809,7 +3055,7 @@ export default function Home() {
                 <div className="ai-context-ribbon">
                   <span>智能体已连接当前牌阵</span>
                   <strong>{spreadInfo.name}</strong>
-                  <small>{drawn.map((card) => `${card.name}${card.reversed ? '·逆' : ''}`).join(' · ')}</small>
+                  <small>{drawn.map((card) => `${card.name}${card.reversed ? '·逆' : ''}`).join(' · ')}{clarifiers.length ? ` · 澄清牌 ${clarifiers.map((card) => card.name).join('、')}` : ''}</small>
                 </div>
 
                 <div className="ai-style-picker" aria-label="选择AI对话风格">
@@ -2825,6 +3071,10 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
+
+                <div className="ai-reply-length" aria-label="选择回答长度"><span>回答长度</span>{(Object.entries(replyLengths) as [ReplyLength, (typeof replyLengths)[ReplyLength]][]).map(([key,item]) => <button key={key} type="button" className={replyLength === key ? 'active' : ''} aria-pressed={replyLength === key} onClick={() => chooseReplyLength(key)}><b>{item.name}</b><small>{item.note}</small></button>)}</div>
+
+                {renderAgentOperationPanels()}
 
                 <div className={`ai-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                   {chatMessages.length ? chatMessages.map((message) => (
@@ -2875,7 +3125,7 @@ export default function Home() {
                 </div>
 
                 <div className="ai-chat-footer">
-                  <p>{chatError || (agentMode === 'local' ? '模型通道暂时不可用，本轮已由星契本地牌义引擎完成，不消耗页面 AI 次数。' : '对话保存在这台设备；每天最多 8 次。智能体解读仅用于自我探索。')}</p>
+                  <p>{chatError || (agentMode === 'local' ? '模型通道暂时不可用，本轮已由星契本地牌义引擎完成，不消耗页面 AI 次数。' : `对话保存在这台设备；每天最多 ${DAILY_CHAT_LIMIT} 次。智能体解读仅用于自我探索。`)}</p>
                   {chatMessages.length > 0 && <button type="button" onClick={clearChat} disabled={isChatStreaming}><Trash2 aria-hidden="true" />清除对话</button>}
                 </div>
               </section>
@@ -3063,7 +3313,7 @@ export default function Home() {
         <section className="agent-shell" id="agent">
           <div className="agent-page-heading">
             <div>
-              <p className="eyebrow"><span /> XINGQI TAROT AGENT · V3</p>
+              <p className="eyebrow"><span /> XINGQI TAROT AGENT · V4</p>
               <h1>星契塔罗智能体</h1>
               <p>先帮你把困扰整理成可解读的问题，再推荐牌阵、读取组合证据，并把对话接回塔罗日记。</p>
             </div>
@@ -3103,10 +3353,11 @@ export default function Home() {
                 <div className="agent-context-question"><small>{spreadInfo.name}</small><p>{question || '这次没有写下具体问题，将围绕牌面开放解读。'}</p></div>
                 <div className="agent-context-deck" aria-label="当前牌阵牌面">
                   {drawn.slice(0,7).map((card,index) => <div key={`agent-card-${card.id}-${index}`}><img src={cardImagePath(card)} alt={card.name} className={card.reversed ? 'is-reversed' : ''} /><span>{spreadInfo.positions[index]?.short || `牌 ${index + 1}`}</span></div>)}
+                  {clarifiers.slice(0,3).map((card,index) => <div className="is-clarifier" key={`agent-clarifier-${card.id}-${index}`}><img src={cardImagePath(card)} alt={`${card.name}澄清牌`} className={card.reversed ? 'is-reversed' : ''} /><span>澄清 {index + 1}</span></div>)}
                   {drawn.length > 7 && <em>+{drawn.length - 7}</em>}
                 </div>
-                <div className="agent-context-summary"><span>智能体正在使用</span><p>{drawn.length} 张牌 · {drawn.filter((card) => card.reversed).length} 张逆位 · {structure?.majorCount || 0} 张大阿卡纳</p></div>
-                {combinationInsights.length > 0 && <div className="agent-combination-snapshot"><span>组合知识库命中 {combinationInsights.length} 条</span>{combinationInsights.slice(0, 3).map((item) => <div key={`${item.kind}-${item.title}`}><b>{item.title}</b><p>{item.meaning}</p></div>)}</div>}
+                <div className="agent-context-summary"><span>智能体正在使用</span><p>{drawn.length} 张原牌{clarifiers.length ? ` + ${clarifiers.length} 张澄清牌` : ''} · {[...drawn,...clarifiers].filter((card) => card.reversed).length} 张逆位 · {structure?.majorCount || 0} 张大阿卡纳</p></div>
+                {agentCombinationInsights.length > 0 && <div className="agent-combination-snapshot"><span>组合知识库命中 {agentCombinationInsights.length} 条</span>{agentCombinationInsights.slice(0, 3).map((item) => <div key={`${item.kind}-${item.title}`}><b>{item.title}</b><p>{item.meaning}</p></div>)}</div>}
 
                 <div className="agent-panel-label agent-source-label"><span>02</span><div><small>SOURCE</small><b>切换解读记录</b></div></div>
                 <div className="agent-source-list">
@@ -3192,6 +3443,10 @@ export default function Home() {
                     {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key,item]) => <button key={key} type="button" className={chatStyle === key ? 'active' : ''} onClick={() => chooseChatStyle(key)} aria-pressed={chatStyle === key}><i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span></button>)}
                   </div>
 
+                  <div className="ai-reply-length" aria-label="选择回答长度"><span>回答长度</span>{(Object.entries(replyLengths) as [ReplyLength, (typeof replyLengths)[ReplyLength]][]).map(([key,item]) => <button key={key} type="button" className={replyLength === key ? 'active' : ''} aria-pressed={replyLength === key} onClick={() => chooseReplyLength(key)}><b>{item.name}</b><small>{item.note}</small></button>)}</div>
+
+                  {renderAgentOperationPanels()}
+
                   <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                     {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>{message.role === 'assistant' && message.content && <details className="ai-message-evidence"><summary>查看回答依据 <ChevronRight /></summary><div><span>{message.mode === 'local' ? '本地韦特牌义' : 'AI 模型协作'} · {(message.tools?.length ? message.tools : agentTools).join(' · ')}</span>{message.evidence?.length ? <ul>{message.evidence.map((item,index) => <li key={`${message.id}-evidence-${index}`}>{item}</li>)}</ul> : <p>本次回答依据当前「{spreadInfo.name}」的 {drawn.length} 张牌、牌位与正逆位生成。</p>}<small>这里展示的是智能体实际读取的牌库证据；它用于说明解读路径，不是对现实事实的证明。</small></div></details>}</article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
                     <div ref={chatEndRef} />
@@ -3206,6 +3461,8 @@ export default function Home() {
                     ].map((prompt) => <button type="button" key={prompt} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}>{prompt}</button>)}
                   </div>
 
+                  <div className="agent-command-chips" aria-label="智能体可执行操作"><span>可直接让智能体执行</span>{['补抽一张澄清牌','打开第三张牌百科','把这次对话保存到塔罗日记','保留问题并重新抽牌'].map((command) => <button type="button" key={command} onClick={() => void sendChat(command)} disabled={isChatStreaming}>{command}</button>)}</div>
+
                   <div className="ai-chat-composer">
                     <Textarea value={chatInput} onChange={(event) => setChatInput(event.target.value.slice(0,1000))} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void sendChat(); } }} placeholder="把你真正担心的部分告诉我……" aria-label="向星契智能体追问" disabled={isChatStreaming || chatRemaining <= 0} />
                     <button className="ai-send-button" type="button" onClick={() => void sendChat()} disabled={!chatInput.trim() || isChatStreaming || chatRemaining <= 0} aria-label="发送问题"><Send aria-hidden="true" /></button>
@@ -3213,7 +3470,7 @@ export default function Home() {
 
                   <div className="ai-chat-footer">
                     <p>{chatError || (agentMode === 'local' ? '模型暂时不可用，本轮已自动切换为本地牌义，不消耗页面 AI 次数。' : '对话自动保存在当前设备；智能体解读用于自我探索，不替代现实判断。')}</p>
-                    <div className="agent-chat-actions">{isChatStreaming ? <button type="button" className="stop" onClick={stopChat}><Square />停止生成</button> : <><button type="button" onClick={retryLastChat} disabled={!chatMessages.some((message) => message.role === 'user') || chatRemaining <= 0}><RotateCcw />重新生成</button><button type="button" onClick={saveAgentSummary} disabled={!chatMessages.some((message) => message.role === 'assistant' && message.content.trim())}><Save />保存到塔罗日记</button></>}<button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
+                    <div className="agent-chat-actions">{isChatStreaming ? <button type="button" className="stop" onClick={stopChat}><Square />停止生成</button> : <><button type="button" onClick={retryLastChat} disabled={!chatMessages.some((message) => message.role === 'user') || chatRemaining <= 0}><RotateCcw />重新生成</button><button type="button" onClick={() => saveAgentSummary()} disabled={!chatMessages.some((message) => message.role === 'assistant' && message.content.trim())}><Save />保存到塔罗日记</button></>}<button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
                   </div>
                 </section>
               </div>
