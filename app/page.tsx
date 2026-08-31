@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeftRight, BookOpen, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Sunrise, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, Bot, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Sunrise, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -403,7 +403,7 @@ const majorHealth = [
 ];
 
 type DrawnCard = Omit<TarotCard, 'reversed'> & { reversed: boolean; reversedKeywords: string };
-type AppView = 'daily' | 'reading' | 'library' | 'history';
+type AppView = 'daily' | 'reading' | 'library' | 'history' | 'agent';
 type LibraryFilter = 'all' | 'major' | 'wands' | 'cups' | 'swords' | 'pentacles' | 'court';
 type DiaryNotes = {
   initial?: string;
@@ -881,7 +881,9 @@ export default function Home() {
   const activeSkyPeriod: SkyPeriod = skyMode === 'night' ? 'night' : skyPeriod;
   const constellationZone: ConstellationZone = view === 'reading' && (isSelecting || isShuffling || isCentering)
     ? 'selection'
-    : view;
+    : view === 'agent'
+      ? 'history'
+      : view;
 
   const subtitle = useMemo(
     () => spreadDefinitions[spread].description,
@@ -1434,6 +1436,39 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  function loadAgentReading(record: SavedReading) {
+    const restored = record.cards.map((entry) => {
+      const card = cards.find((item) => item.id === entry.id);
+      return card ? withOrientation(card, entry.reversed) : null;
+    }).filter(Boolean) as DrawnCard[];
+    if (restored.length !== spreadDefinitions[record.spread].positions.length) return;
+    setSpread(record.spread);
+    setQuestion(record.question);
+    const restoredChoice = record.spread === 'choice' ? parseChoiceQuestion(record.question) : null;
+    setChoiceOptionA(record.optionA || restoredChoice?.optionA || '');
+    setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
+    setDrawn(restored);
+    setIsSharedReading(false);
+    setView('agent');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function copyChatTranscript() {
+    if (!chatMessages.length) {
+      showNotice('当前还没有可以复制的对话');
+      return;
+    }
+    const transcript = chatMessages
+      .map((message) => `${message.role === 'assistant' ? '星契智能体' : '我'}：\n${message.content}`)
+      .join('\n\n');
+    try {
+      await navigator.clipboard.writeText(transcript);
+      showNotice('智能体对话已复制');
+    } catch {
+      showNotice('复制失败，请长按对话文字复制');
+    }
+  }
+
   function removeHistory(id: string) {
     setHistory((current) => {
       const next = current.filter((item) => item.id !== id);
@@ -1835,6 +1870,7 @@ export default function Home() {
             <button className={view === 'reading' ? 'active' : ''} onClick={() => setView('reading')}><MoonStar aria-hidden="true" />抽牌</button>
             <button className={view === 'library' ? 'active' : ''} onClick={() => setView('library')}><BookOpen aria-hidden="true" />牌库</button>
             <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}><Clock3 aria-hidden="true" />日记</button>
+            <button className={view === 'agent' ? 'active' : ''} onClick={() => setView('agent')}><Bot aria-hidden="true" />智能体</button>
           </nav>
           <button type="button" className="sky-mode-toggle" onClick={toggleSkyMode} aria-pressed={skyMode === 'night'} title={skyMode === 'auto' ? '当前随本地时间变化，点击固定夜间' : '当前固定夜间，点击跟随本地时间'}>
             <MoonStar aria-hidden="true" /><span>{skyMode === 'auto' ? '自动' : '夜间'}</span>
@@ -2600,6 +2636,102 @@ export default function Home() {
               </article>;
             })}
           </div> : <div className="history-empty"><span>☾</span><h2>你的塔罗日记还是空的</h2><p>完成一次抽牌后，问题、牌阵和牌面会自动保存在这里。</p><Button onClick={() => setView('reading')}>开始第一次抽牌</Button></div>}
+        </section>
+      )}
+
+      {view === 'agent' && (
+        <section className="agent-shell" id="agent">
+          <div className="agent-page-heading">
+            <div>
+              <p className="eyebrow"><span /> XINGQI TAROT AGENT · V2</p>
+              <h1>星契塔罗智能体</h1>
+              <p>选择当前牌阵或一条塔罗日记，让智能体沿着牌位、正逆位、组合关系和现实行动继续陪你聊。</p>
+            </div>
+            <div className="agent-page-stat"><span>今日可对话</span><b>{chatRemaining}</b><small>／{DAILY_CHAT_LIMIT} 次</small></div>
+          </div>
+
+          {!drawn.length ? (
+            <div className="agent-empty-state">
+              <div className="agent-empty-orbit" aria-hidden="true"><Bot /><i /><i /></div>
+              <span>需要一组真实牌面作为上下文</span>
+              <h2>先为智能体连接一次抽牌</h2>
+              <p>你可以开始一次新抽牌，也可以从塔罗日记中接续过去的牌阵。智能体不会在没有牌面的情况下凭空编造答案。</p>
+              <div className="agent-empty-actions"><Button onClick={() => setView('reading')}><MoonStar />开始抽牌</Button>{history.length > 0 && <button type="button" onClick={() => loadAgentReading(history[0])}><Clock3 />读取最近日记</button>}</div>
+              {history.length > 1 && <div className="agent-recent-empty"><small>或者选择一条记录</small>{history.slice(0,4).map((record) => <button type="button" key={`agent-empty-${record.id}`} onClick={() => loadAgentReading(record)}><span>{spreadDefinitions[record.spread].name}</span><b>{record.question || '没有写下问题'}</b><small>{formatDiaryDate(record.createdAt)}</small></button>)}</div>}
+            </div>
+          ) : (
+            <div className="agent-workspace">
+              <aside className="agent-context-panel">
+                <div className="agent-panel-label"><span>01</span><div><small>CONTEXT</small><b>当前连接的牌阵</b></div></div>
+                <div className="agent-context-question"><small>{spreadInfo.name}</small><p>{question || '这次没有写下具体问题，将围绕牌面开放解读。'}</p></div>
+                <div className="agent-context-deck" aria-label="当前牌阵牌面">
+                  {drawn.slice(0,7).map((card,index) => <div key={`agent-card-${card.id}-${index}`}><img src={cardImagePath(card)} alt={card.name} className={card.reversed ? 'is-reversed' : ''} /><span>{spreadInfo.positions[index]?.short || `牌 ${index + 1}`}</span></div>)}
+                  {drawn.length > 7 && <em>+{drawn.length - 7}</em>}
+                </div>
+                <div className="agent-context-summary"><span>智能体正在使用</span><p>{drawn.length} 张牌 · {drawn.filter((card) => card.reversed).length} 张逆位 · {structure?.majorCount || 0} 张大阿卡纳</p></div>
+
+                <div className="agent-panel-label agent-source-label"><span>02</span><div><small>SOURCE</small><b>切换解读记录</b></div></div>
+                <div className="agent-source-list">
+                  {history.length ? history.slice(0,4).map((record) => {
+                    const signature = record.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
+                    const isCurrent = record.spread === spread && signature === drawnSignature;
+                    return <button type="button" className={isCurrent ? 'active' : ''} key={`agent-source-${record.id}`} onClick={() => loadAgentReading(record)}><span>{spreadDefinitions[record.spread].name}</span><b>{record.question || '没有写下问题'}</b><small>{isCurrent ? '当前牌阵' : formatDiaryDate(record.createdAt)}</small></button>;
+                  }) : <p className="agent-no-source">保存过的牌阵会出现在这里，方便以后继续追问。</p>}
+                </div>
+                <button type="button" className="agent-new-reading" onClick={() => setView('reading')}><MoonStar />重新抽一组牌<ChevronRight /></button>
+              </aside>
+
+              <div className="agent-main-column">
+                <section className="agent-workflow-panel" aria-labelledby="agent-workflow-title">
+                  <div className="agent-workflow-heading"><div><span>03 · ANALYSIS MODES</span><h2 id="agent-workflow-title">你想让智能体怎么分析？</h2></div><small>点击即可开始</small></div>
+                  <div className="agent-workflows">
+                    {[
+                      ['一句话判断','先直说这组牌最核心的结论，不要绕弯。','01'],
+                      ['矛盾与盲点','找出牌面最大的矛盾，以及我最容易忽略的地方。','02'],
+                      ['三步行动计划','把这组牌的建议拆成今天、本周和接下来一个月的行动。','03'],
+                      ['现实验证信号','接下来要观察哪些现实信号，才能判断趋势是否正在发生？','04'],
+                    ].map(([title,prompt,index]) => <button type="button" key={title} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}><small>{index}</small><span><b>{title}</b><em>{prompt}</em></span><ChevronRight /></button>)}
+                  </div>
+                </section>
+
+                <section className="ai-tarot-chat agent-chat-console" aria-labelledby="agent-chat-title">
+                  <div className="ai-chat-heading">
+                    <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
+                    <div><span>LIVE ORACLE CONVERSATION</span><h3 id="agent-chat-title">继续追问这组牌</h3><p>回复会综合当前牌阵、日记上下文与本轮对话，不会只复述单张牌义。</p></div>
+                    <div className="ai-chat-quota"><b>{chatRemaining}</b><span>今日剩余</span></div>
+                  </div>
+
+                  <div className="ai-agent-status-row" aria-live="polite">
+                    <span className={`ai-agent-mode mode-${agentMode}`}><i />{agentMode === 'thinking' ? '正在分析' : agentMode === 'model' ? '模型协作' : agentMode === 'local' ? '本地解读' : '工具就绪'}</span>
+                    <div className="ai-agent-tools">{agentTools.map((tool) => <small key={tool}>✓ {tool}</small>)}</div>
+                  </div>
+
+                  <div className="ai-style-picker" aria-label="选择智能体对话风格">
+                    {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key,item]) => <button key={key} type="button" className={chatStyle === key ? 'active' : ''} onClick={() => chooseChatStyle(key)} aria-pressed={chatStyle === key}><i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span></button>)}
+                  </div>
+
+                  <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
+                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p></article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
+                    <div ref={chatEndRef} />
+                  </div>
+
+                  <div className="ai-prompt-chips" aria-label="更多推荐追问">
+                    {['哪张牌最影响最终走向？','如果我什么都不做，会怎样发展？','这组牌有没有被我过度解读？'].map((prompt) => <button type="button" key={prompt} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}>{prompt}</button>)}
+                  </div>
+
+                  <div className="ai-chat-composer">
+                    <Textarea value={chatInput} onChange={(event) => setChatInput(event.target.value.slice(0,1000))} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void sendChat(); } }} placeholder="把你真正担心的部分告诉我……" aria-label="向星契智能体追问" disabled={isChatStreaming || chatRemaining <= 0} />
+                    <button className="ai-send-button" type="button" onClick={() => void sendChat()} disabled={!chatInput.trim() || isChatStreaming || chatRemaining <= 0} aria-label="发送问题"><Send aria-hidden="true" /></button>
+                  </div>
+
+                  <div className="ai-chat-footer">
+                    <p>{chatError || (agentMode === 'local' ? '模型暂时不可用，本轮已自动切换为本地牌义，不消耗页面 AI 次数。' : '对话自动保存在当前设备；智能体解读用于自我探索，不替代现实判断。')}</p>
+                    <div className="agent-chat-actions"><button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
+                  </div>
+                </section>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
