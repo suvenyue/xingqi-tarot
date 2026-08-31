@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cardOrigin } from '@/lib/card-origins';
+import { buildCombinationInsights, type CombinationInsight } from '@/lib/tarot-combinations';
 import { minorCards, minorDomainMeaning, type DeckCard, type Domain } from '@/lib/tarot-deck';
 
 type Spread = 'single' | 'three' | 'celtic' | 'relationship' | 'choice' | 'career' | 'year';
@@ -445,6 +446,14 @@ type ChatMessage = {
 };
 type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
 type AgentMemory = { enabled: boolean; note: string; updatedAt?: number };
+type GuidedPlan = {
+  refinedQuestion: string;
+  spread: Spread;
+  reason: string;
+  followUps: string[];
+  memorySuggestion: string;
+  mode?: 'model' | 'local';
+};
 type CloudSyncStatus = 'checking' | 'local' | 'ready' | 'syncing' | 'error';
 type CloudSnapshot = {
   history: SavedReading[];
@@ -503,6 +512,7 @@ const agentToolLabels: Record<string, string> = {
   meanings: '检索牌义证据',
   patterns: '分析整体结构',
   links: '追踪牌组联系',
+  combinations: '检索组合牌义',
   actions: '生成行动建议',
   memory: '读取本轮记忆',
   journal: '复盘塔罗日记',
@@ -884,6 +894,11 @@ export default function Home() {
   const [agentJournalEnabled, setAgentJournalEnabled] = useState(false);
   const [agentLabOpen, setAgentLabOpen] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
+  const [guidedConcern, setGuidedConcern] = useState('');
+  const [guidedPlan, setGuidedPlan] = useState<GuidedPlan | null>(null);
+  const [isPlanningReading, setIsPlanningReading] = useState(false);
+  const [guidedPlanError, setGuidedPlanError] = useState('');
+  const [memorySuggestionDismissed, setMemorySuggestionDismissed] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('checking');
   const [cloudDisplayName, setCloudDisplayName] = useState('');
   const [cloudReady, setCloudReady] = useState(false);
@@ -911,9 +926,13 @@ export default function Home() {
   const spreadInfo = spreadDefinitions[spread];
   const structure = drawn.length ? readingStructure(drawn, spread) : null;
   const integrated = drawn.length ? integratedReading(drawn, spread, question) : null;
+  const drawnSignature = drawn.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
+  const combinationInsights = useMemo<CombinationInsight[]>(
+    () => drawn.length ? buildCombinationInsights(drawn, spreadInfo.positions.map((position) => position.name)) : [],
+    [drawnSignature, spread],
+  );
   const fullSynthesis = integrated?.story || '';
   const oneSentenceSummary = integrated?.verdict || '';
-  const drawnSignature = drawn.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
   const readingChatKey = drawn.length
     ? `${spread}|${question.trim()}|${drawnSignature}`
     : '';
@@ -1152,7 +1171,17 @@ export default function Home() {
     try {
       const chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string, SavedChat>;
       const saved = chats[readingChatKey];
-      setChatMessages(Array.isArray(saved?.messages) ? saved.messages.slice(-30) : []);
+      const plannedOpener: ChatMessage[] = guidedPlan?.followUps?.length
+        ? [{
+            id: `guided-${Date.now()}`,
+            role: 'assistant',
+            content: `牌已经展开了。在继续解读前，我想先确认一件事：${guidedPlan.followUps[0]}${guidedPlan.followUps[1] ? `\n\n如果你愿意，也可以一起告诉我：${guidedPlan.followUps[1]}` : ''}`,
+            createdAt: Date.now(),
+            tools: ['整理问题', '推荐牌阵', '读取当前牌阵'],
+            mode: 'local',
+          }]
+        : [];
+      setChatMessages(Array.isArray(saved?.messages) ? saved.messages.slice(-30) : plannedOpener);
       setChatStyle(saved?.style && saved.style in chatStyles ? saved.style : 'gentle');
     } catch {
       setChatMessages([]);
@@ -1410,6 +1439,64 @@ export default function Home() {
     showNotice('长期记忆已删除');
   }
 
+  async function planGuidedReading() {
+    const concern = guidedConcern.trim();
+    if (concern.length < 4) {
+      setGuidedPlanError('先用一两句话说说最近最困扰你的事情。');
+      return;
+    }
+    setIsPlanningReading(true);
+    setGuidedPlanError('');
+    try {
+      const response = await fetch('/api/tarot-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concern }),
+      });
+      const payload = await response.json().catch(() => null) as (GuidedPlan & { error?: string }) | null;
+      if (!response.ok || !payload) throw new Error(payload?.error || '暂时没能整理好这个问题，请再试一次。');
+      setGuidedPlan(payload);
+      setMemorySuggestionDismissed(false);
+    } catch (error) {
+      setGuidedPlanError(error instanceof Error ? error.message : '暂时没能整理好这个问题，请再试一次。');
+    } finally {
+      setIsPlanningReading(false);
+    }
+  }
+
+  function acceptGuidedPlan() {
+    if (!guidedPlan) return;
+    setSpread(guidedPlan.spread);
+    setQuestion(guidedPlan.refinedQuestion.slice(0, 180));
+    setChoiceOptionA('');
+    setChoiceOptionB('');
+    setDrawn([]);
+    setSelectionDeck([]);
+    setSelectedCards([]);
+    setIsSelecting(false);
+    setAgentSourceId(null);
+    setChatMessages([]);
+    setView('reading');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showNotice(`已采用${spreadDefinitions[guidedPlan.spread].name}，现在可以开始抽牌`);
+  }
+
+  function confirmGuidedMemory() {
+    const suggestion = guidedPlan?.memorySuggestion.trim();
+    if (!suggestion) return;
+    const current = agentMemoryNote.trim();
+    const next = current.includes(suggestion) ? current : [current, suggestion].filter(Boolean).join('\n');
+    saveAgentMemory(true, next.slice(0, 1200));
+    setMemorySuggestionDismissed(true);
+    showNotice('已在你确认后写入长期记忆');
+  }
+
+  function currentAnswerEvidence() {
+    const cardEvidence = drawn.slice(0, 7).map((card, index) => `${spreadInfo.positions[index]?.name || `牌位 ${index + 1}`}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
+    const combinationEvidence = combinationInsights.slice(0, 5).map((item) => `组合知识库｜${item.title}：${item.evidence}${item.meaning}`);
+    return [...cardEvidence, ...combinationEvidence];
+  }
+
   function toggleComparisonReading(id: string) {
     setComparisonIds((current) => {
       if (current.includes(id)) return current.filter((item) => item !== id);
@@ -1513,6 +1600,12 @@ export default function Home() {
             synthesis: fullSynthesis,
             verdict: integrated?.verdict || '',
             connections: integrated?.connections.map((connection) => `${connection.title}：${connection.body}`) || [],
+            combinations: combinationInsights.map((item) => ({
+              title: item.title,
+              cards: item.cards,
+              evidence: item.evidence,
+              meaning: item.meaning,
+            })),
             actions: integrated?.actions || null,
             energy: structure
               ? `大阿卡纳 ${structure.majorCount}/${drawn.length}；正位 ${drawn.length - structure.reversedCount}，逆位 ${structure.reversedCount}；主导元素 ${structure.dominantLabel}；主线：${structure.mainline}`
@@ -1582,7 +1675,7 @@ export default function Home() {
         ? assistantText.trimStart().slice(localMarker.length).trimStart()
         : assistantText;
       const finalMode: AgentMode = usedLocalFallback ? 'local' : 'model';
-      const answerEvidence = drawn.slice(0,7).map((card,index) => `${spreadInfo.positions[index]?.name || `牌位 ${index + 1}`}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
+      const answerEvidence = currentAnswerEvidence();
       setAgentMode(finalMode);
       if (finalMode === 'model') consumeLocalChatQuota();
       const completed = [
@@ -1594,7 +1687,7 @@ export default function Home() {
     } catch (error) {
       if (abortController.signal.aborted) {
         const partial = assistantText.trim();
-        const answerEvidence = drawn.slice(0,7).map((card,index) => `${spreadInfo.positions[index]?.name || `牌位 ${index + 1}`}｜${card.name}·${card.reversed ? '逆位' : '正位'}：${card.reversed ? card.reversedMeaning : card.uprightMeaning}`);
+        const answerEvidence = currentAnswerEvidence();
         const stoppedMessages = partial
           ? [...baseMessages, { id: assistantId, role: 'assistant' as const, content: partial, createdAt: Date.now(), tools: toolLabels, mode: responseMode, evidence: answerEvidence }]
           : baseMessages;
@@ -1647,6 +1740,7 @@ export default function Home() {
   }
 
   function changeSpread(nextSpread: Spread) {
+    setGuidedPlan(null);
     setSpread(nextSpread);
     setDrawn([]);
     if (nextSpread === 'choice') {
@@ -1688,12 +1782,16 @@ export default function Home() {
   function persistReading(cardList = drawn) {
     if (!cardList.length) return;
     const record = makeReading(cardList);
-    setHistory((current) => {
-      const duplicate = current.find((item) => item.spread === record.spread && item.question === record.question && item.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-') === record.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-'));
-      const next = duplicate ? current : [record, ...current].slice(0,MAX_HISTORY_ITEMS);
+    const signature = record.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
+    const duplicate = history.find((item) => item.spread === record.spread && item.question === record.question && item.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-') === signature);
+    if (duplicate) {
+      setAgentSourceId(duplicate.id);
+    } else {
+      const next = [record, ...history].slice(0, MAX_HISTORY_ITEMS);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-      return next;
-    });
+      setHistory(next);
+      setAgentSourceId(record.id);
+    }
     showNotice('本次解读已保存到这台设备');
   }
 
@@ -1711,6 +1809,7 @@ export default function Home() {
     setDrawn(restored);
     setAgentSourceId(record.id);
     setAgentJournalEnabled(false);
+    setGuidedPlan(null);
     setIsSharedReading(false);
     setView('reading');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1730,6 +1829,7 @@ export default function Home() {
     setDrawn(restored);
     setAgentSourceId(record.id);
     setAgentJournalEnabled(false);
+    setGuidedPlan(null);
     setIsSharedReading(false);
     setView('agent');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1752,17 +1852,18 @@ export default function Home() {
   }
 
   function saveAgentSummary() {
-    const lastAnswer = [...chatMessages].reverse().find((item) => item.role === 'assistant' && item.content.trim());
-    if (!lastAnswer) {
-      showNotice('还没有可以保存的智能体总结');
+    const usefulMessages = chatMessages.filter((item) => item.content.trim());
+    if (!usefulMessages.some((item) => item.role === 'assistant')) {
+      showNotice('还没有可以保存的智能体对话');
       return;
     }
     const time = new Intl.DateTimeFormat('zh-CN',{ month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-    const summary = `【智能体总结 ${time}】\n${lastAnswer.content.trim().slice(0,900)}`;
+    const transcript = usefulMessages.map((item) => `${item.role === 'assistant' ? '星契' : '我'}：${item.content.trim()}`).join('\n\n');
+    const summary = `【智能体对话 ${time}】\n${transcript.slice(-1500)}`;
     if (activeAgentRecord) {
       const previous = activeAgentRecord.notes?.reflection?.trim();
       updateDiaryNote(activeAgentRecord.id,'reflection',`${previous ? `${previous}\n\n` : ''}${summary}`.slice(-1800));
-      showNotice('智能体总结已保存到这条塔罗日记');
+      showNotice('本次对话已保存到这条塔罗日记');
       return;
     }
     const record = makeReading(drawn);
@@ -1774,7 +1875,7 @@ export default function Home() {
     });
     setAgentSourceId(savedRecord.id);
     setAgentJournalEnabled(false);
-    showNotice('本次牌阵与智能体总结已保存到塔罗日记');
+    showNotice('本次牌阵与智能体对话已保存到塔罗日记');
   }
 
   function removeHistory(id: string) {
@@ -2138,6 +2239,12 @@ export default function Home() {
     setRevealBurst(true);
     if (burstTimerRef.current) window.clearTimeout(burstTimerRef.current);
     burstTimerRef.current = window.setTimeout(() => setRevealBurst(false), 2200);
+    if (guidedPlan) {
+      window.setTimeout(() => {
+        setView('agent');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }, 900);
+    }
   }
 
   function reset() {
@@ -2153,6 +2260,9 @@ export default function Home() {
     setIsShuffling(false);
     setRevealBurst(false);
     setIsCentering(false);
+    setGuidedPlan(null);
+    setGuidedPlanError('');
+    setMemorySuggestionDismissed(false);
     cancelMoonHold();
   }
 
@@ -2953,20 +3063,37 @@ export default function Home() {
         <section className="agent-shell" id="agent">
           <div className="agent-page-heading">
             <div>
-              <p className="eyebrow"><span /> XINGQI TAROT AGENT · V2</p>
+              <p className="eyebrow"><span /> XINGQI TAROT AGENT · V3</p>
               <h1>星契塔罗智能体</h1>
-              <p>选择当前牌阵或一条塔罗日记，让智能体沿着牌位、正逆位、组合关系和现实行动继续陪你聊。</p>
+              <p>先帮你把困扰整理成可解读的问题，再推荐牌阵、读取组合证据，并把对话接回塔罗日记。</p>
             </div>
             <div className="agent-page-stat"><span>今日可对话</span><b>{chatRemaining}</b><small>／{DAILY_CHAT_LIMIT} 次</small><em className={`cloud-${cloudSyncStatus}`}>{cloudSyncStatus === 'ready' ? `云端已同步${cloudDisplayName ? ` · ${cloudDisplayName}` : ''}` : cloudSyncStatus === 'syncing' ? '正在同步云端' : cloudSyncStatus === 'checking' ? '正在检查登录' : cloudSyncStatus === 'error' ? '云端暂不可用' : '当前为本地保存'}</em></div>
           </div>
 
           {!drawn.length ? (
             <div className="agent-empty-state">
-              <div className="agent-empty-orbit" aria-hidden="true"><Bot /><i /><i /></div>
-              <span>需要一组真实牌面作为上下文</span>
-              <h2>先为智能体连接一次抽牌</h2>
-              <p>你可以开始一次新抽牌，也可以从塔罗日记中接续过去的牌阵。智能体不会在没有牌面的情况下凭空编造答案。</p>
-              <div className="agent-empty-actions"><Button onClick={() => setView('reading')}><MoonStar />开始抽牌</Button>{history.length > 0 && <button type="button" onClick={() => loadAgentReading(history[0])}><Clock3 />读取最近日记</button>}</div>
+              <div className="agent-guided-intro">
+                <div className="agent-empty-orbit" aria-hidden="true"><Bot /><i /><i /></div>
+                <div><span>ACTIVE READING · 主动占卜</span><h2>不用先想好该怎么问</h2><p>把最近真正困扰你的事情说出来。智能体会先帮你整理问题、推荐牌阵并解释原因，再带你进入抽牌。</p></div>
+              </div>
+
+              <div className="agent-guided-planner">
+                <label htmlFor="guided-concern">最近哪件事一直在你心里打转？</label>
+                <Textarea id="guided-concern" value={guidedConcern} onChange={(event) => { setGuidedConcern(event.target.value.slice(0, 800)); setGuidedPlanError(''); }} placeholder="不用组织成塔罗问题，像平时说话一样描述就可以。例如：我想换工作，但担心收入不稳定，也不知道现在离开是不是冲动……" disabled={isPlanningReading} />
+                <div className="agent-guided-submit"><small>{guidedConcern.length}／800 · 这里不会自动写入长期记忆</small><Button onClick={() => void planGuidedReading()} disabled={isPlanningReading || guidedConcern.trim().length < 4}><Sparkles />{isPlanningReading ? '正在整理…' : '帮我整理问题'}</Button></div>
+                {guidedPlanError && <p className="agent-guided-error">{guidedPlanError}</p>}
+              </div>
+
+              {guidedPlan && <div className="agent-plan-result">
+                <div className="agent-plan-heading"><div><span>智能体建议这样问</span><small>{guidedPlan.mode === 'model' ? 'AI已整理' : '本地规则已整理'}</small></div><b>{spreadDefinitions[guidedPlan.spread].name} · {spreadDefinitions[guidedPlan.spread].countLabel}</b></div>
+                <Textarea value={guidedPlan.refinedQuestion} onChange={(event) => setGuidedPlan((current) => current ? { ...current, refinedQuestion: event.target.value.slice(0, 500) } : current)} aria-label="整理后的占卜问题" />
+                <div className="agent-plan-reason"><span>为什么推荐这个牌阵</span><p>{guidedPlan.reason}</p></div>
+                <div className="agent-plan-followups"><span>抽牌后还会确认</span>{guidedPlan.followUps.map((item, index) => <p key={`guided-followup-${index}`}><i>{index + 1}</i>{item}</p>)}</div>
+                <div className="agent-plan-actions"><button type="button" onClick={() => setGuidedPlan(null)}>重新整理</button><Button onClick={acceptGuidedPlan}>采用这个问题并去抽牌<ChevronRight /></Button></div>
+              </div>}
+
+              <div className="agent-empty-divider"><span>或者</span></div>
+              <div className="agent-empty-actions"><Button variant="outline" onClick={() => { setGuidedPlan(null); setView('reading'); }}><MoonStar />自己选择牌阵</Button>{history.length > 0 && <button type="button" onClick={() => loadAgentReading(history[0])}><Clock3 />读取最近日记</button>}</div>
               {history.length > 1 && <div className="agent-recent-empty"><small>或者选择一条记录</small>{history.slice(0,4).map((record) => <button type="button" key={`agent-empty-${record.id}`} onClick={() => loadAgentReading(record)}><span>{spreadDefinitions[record.spread].name}</span><b>{record.question || '没有写下问题'}</b><small>{formatDiaryDate(record.createdAt)}</small></button>)}</div>}
             </div>
           ) : (
@@ -2979,6 +3106,7 @@ export default function Home() {
                   {drawn.length > 7 && <em>+{drawn.length - 7}</em>}
                 </div>
                 <div className="agent-context-summary"><span>智能体正在使用</span><p>{drawn.length} 张牌 · {drawn.filter((card) => card.reversed).length} 张逆位 · {structure?.majorCount || 0} 张大阿卡纳</p></div>
+                {combinationInsights.length > 0 && <div className="agent-combination-snapshot"><span>组合知识库命中 {combinationInsights.length} 条</span>{combinationInsights.slice(0, 3).map((item) => <div key={`${item.kind}-${item.title}`}><b>{item.title}</b><p>{item.meaning}</p></div>)}</div>}
 
                 <div className="agent-panel-label agent-source-label"><span>02</span><div><small>SOURCE</small><b>切换解读记录</b></div></div>
                 <div className="agent-source-list">
@@ -3011,8 +3139,13 @@ export default function Home() {
                   </div>
                 </section>
 
+                {guidedPlan && <section className="agent-guided-context" aria-label="主动占卜后续确认">
+                  <div><span>主动占卜进行中</span><h2>牌已经展开，接下来可以直接说真实情况</h2><p>{guidedPlan.followUps[0]}{guidedPlan.followUps[1] ? ` 也可以顺便告诉我：${guidedPlan.followUps[1]}` : ''}</p></div>
+                  {!memorySuggestionDismissed && guidedPlan.memorySuggestion && <aside><small>只有你确认后才会记住</small><p>{guidedPlan.memorySuggestion}</p><div><button type="button" onClick={() => setMemorySuggestionDismissed(true)}>这次不记</button><button type="button" onClick={confirmGuidedMemory}>确认写入长期记忆</button></div></aside>}
+                </section>}
+
                 <section className="agent-capability-lab" aria-labelledby="agent-lab-title">
-                  <div className="agent-lab-heading"><div><span>04 · PERSONAL CONTEXT</span><h2 id="agent-lab-title">让智能体真正理解你的变化</h2></div><div className="agent-lab-controls"><small>所有设置仅保存在当前设备</small><button type="button" className="agent-lab-toggle" aria-expanded={agentLabOpen} onClick={() => setAgentLabOpen((current) => !current)}>{agentLabOpen ? '收起工具' : '展开工具'}<ChevronRight /></button></div></div>
+                  <div className="agent-lab-heading"><div><span>04 · PERSONAL CONTEXT</span><h2 id="agent-lab-title">让智能体真正理解你的变化</h2></div><div className="agent-lab-controls"><small>{cloudSyncStatus === 'ready' ? '已登录，设置会同步到云端' : '未登录时保存在当前设备'}</small><button type="button" className="agent-lab-toggle" aria-expanded={agentLabOpen} onClick={() => setAgentLabOpen((current) => !current)}>{agentLabOpen ? '收起工具' : '展开工具'}<ChevronRight /></button></div></div>
                   <div className={`agent-capability-grid ${agentLabOpen ? 'open' : ''}`}>
                     <article className="agent-memory-card">
                       <div className="agent-capability-title"><span>长期记忆</span><button type="button" role="switch" aria-checked={agentMemoryEnabled} className={agentMemoryEnabled ? 'active' : ''} onClick={() => saveAgentMemory(!agentMemoryEnabled,agentMemoryNote)}><i />{agentMemoryEnabled ? '已开启' : '未开启'}</button></div>
@@ -3065,7 +3198,12 @@ export default function Home() {
                   </div>
 
                   <div className="ai-prompt-chips" aria-label="更多推荐追问">
-                    {['哪张牌最影响最终走向？','如果我什么都不做，会怎样发展？','这组牌有没有被我过度解读？'].map((prompt) => <button type="button" key={prompt} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}>{prompt}</button>)}
+                    {[
+                      drawn.length >= 3 ? '重新解释第三张牌，并说明它为什么落在这个位置。' : '换一种更贴近日常生活的方式解释这张牌。',
+                      '只分析感情部分，不要展开其他领域。',
+                      '哪组牌的组合最影响最终走向？',
+                      '如果我什么都不做，会怎样发展？',
+                    ].map((prompt) => <button type="button" key={prompt} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}>{prompt}</button>)}
                   </div>
 
                   <div className="ai-chat-composer">
@@ -3075,7 +3213,7 @@ export default function Home() {
 
                   <div className="ai-chat-footer">
                     <p>{chatError || (agentMode === 'local' ? '模型暂时不可用，本轮已自动切换为本地牌义，不消耗页面 AI 次数。' : '对话自动保存在当前设备；智能体解读用于自我探索，不替代现实判断。')}</p>
-                    <div className="agent-chat-actions">{isChatStreaming ? <button type="button" className="stop" onClick={stopChat}><Square />停止生成</button> : <><button type="button" onClick={retryLastChat} disabled={!chatMessages.some((message) => message.role === 'user') || chatRemaining <= 0}><RotateCcw />重新生成</button><button type="button" onClick={saveAgentSummary} disabled={!chatMessages.some((message) => message.role === 'assistant' && message.content.trim())}><Save />保存总结</button></>}<button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
+                    <div className="agent-chat-actions">{isChatStreaming ? <button type="button" className="stop" onClick={stopChat}><Square />停止生成</button> : <><button type="button" onClick={retryLastChat} disabled={!chatMessages.some((message) => message.role === 'user') || chatRemaining <= 0}><RotateCcw />重新生成</button><button type="button" onClick={saveAgentSummary} disabled={!chatMessages.some((message) => message.role === 'assistant' && message.content.trim())}><Save />保存到塔罗日记</button></>}<button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
                   </div>
                 </section>
               </div>

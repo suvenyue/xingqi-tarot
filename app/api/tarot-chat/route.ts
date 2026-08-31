@@ -28,6 +28,7 @@ type TarotContext = {
   synthesis?: string;
   verdict?: string;
   connections?: string[];
+  combinations?: Array<{ title?: string; cards?: string[]; evidence?: string; meaning?: string }>;
   actions?: { doNow?: string; avoid?: string; watch?: string } | null;
   energy?: string;
   memory?: { enabled?: boolean; note?: string; patterns?: string } | null;
@@ -48,7 +49,7 @@ type RequestBody = {
   context?: TarotContext;
 };
 
-type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'actions' | 'memory' | 'journal' | 'compare';
+type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'combinations' | 'actions' | 'memory' | 'journal' | 'compare';
 
 const STYLE_PROMPTS = {
   gentle: '像一个真正关心用户、但不会过度安慰的朋友。先接住最具体的感受，再说一两个有用的观察。',
@@ -114,6 +115,7 @@ function contextText(context: TarotContext | undefined) {
     context?.verdict ? `直接结论：${context.verdict.slice(0, 1200)}` : '',
     context?.synthesis ? `现有综合解读：${context.synthesis.slice(0, 1800)}` : '',
     Array.isArray(context?.connections) && context.connections.length ? `关键牌组联系：\n${context.connections.slice(0, 7).map((item) => item.slice(0, 900)).join('\n')}` : '',
+    Array.isArray(context?.combinations) && context.combinations.length ? `组合牌义知识库：\n${context.combinations.slice(0, 7).map((item) => `${item.title || '组合'}｜${item.evidence || ''}｜${item.meaning || ''}`).join('\n')}` : '',
     context?.actions ? `行动建议：适合做——${context.actions.doNow?.slice(0, 700) || '无'}；暂时避免——${context.actions.avoid?.slice(0, 700) || '无'}；接下来观察——${context.actions.watch?.slice(0, 700) || '无'}` : '',
     context?.energy ? `能量结构：${context.energy.slice(0, 900)}` : '',
     context?.memory?.enabled && (context.memory.note || context.memory.patterns) ? `用户主动开启的长期记忆：${context.memory.note?.slice(0, 1200) || '无补充背景'}；历史模式：${context.memory.patterns?.slice(0, 800) || '暂无足够记录'}` : '',
@@ -125,6 +127,7 @@ function contextText(context: TarotContext | undefined) {
 function selectAgentTools(message: string, body: RequestBody): AgentToolId[] {
   const tools: AgentToolId[] = ['spread', 'meanings', 'patterns'];
   if ((body.context?.cards?.length || 0) > 1) tools.push('links');
+  if ((body.context?.combinations?.length || 0) > 0) tools.push('combinations');
   if (/怎么|应该|建议|行动|避免|接下来|选择|做什么/.test(message)) tools.push('actions');
   if (body.context?.memory?.enabled && (body.context.memory.note || body.context.memory.patterns)) tools.push('memory');
   if (body.context?.journal && Object.values(body.context.journal).some(Boolean)) tools.push('journal');
@@ -142,6 +145,7 @@ function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) 
     tools.includes('meanings') ? `[工具·历史与韦特图像] ${cards.map((card) => `${card.name || '未知牌'}：${card.origin || '暂无来源说明'}`).join('；')}` : '',
     tools.includes('patterns') && context?.energy ? `[工具·结构分析] ${context.energy}` : '',
     tools.includes('links') && context?.connections?.length ? `[工具·组合关系] ${context.connections.slice(0, 5).join('；')}` : '',
+    tools.includes('combinations') && context?.combinations?.length ? `[工具·组合牌义知识库] ${context.combinations.slice(0, 6).map((item) => `${item.title || '组合'}：${item.evidence || ''}${item.meaning || ''}`).join('；')}` : '',
     tools.includes('actions') && context?.actions ? `[工具·行动建议] 适合：${context.actions.doNow || '暂无'}；避免：${context.actions.avoid || '暂无'}；观察：${context.actions.watch || '暂无'}` : '',
     tools.includes('memory') ? `[工具·长期记忆] ${context?.memory?.enabled ? `${context.memory.note || '无用户补充背景'}；${context.memory.patterns || '暂无历史模式'}` : '已读取本次牌阵最近的对话内容。'}` : '',
     tools.includes('journal') && context?.journal ? `[工具·日记复盘] 当时想法：${context.journal.initial || '未记录'}；后续发生：${context.journal.outcome || '未记录'}；现在回看：${context.journal.reflection || '未记录'}` : '',
@@ -174,6 +178,10 @@ function localAgentText(message: string, context: TarotContext | undefined) {
     return `${lead}\n\n你当时写下的是“${trimText(context.journal.initial, 110) || '还没有记录第一感受'}”，后来发生的是“${trimText(context.journal.outcome, 120) || '还没有补写后续'}”。把牌面和事实分开看：已经发生的部分可以验证理解，没发生的部分不必硬套进牌义。`;
   }
 
+  if (wantsLinks && context?.combinations?.length) {
+    const insight = context.combinations[0];
+    return `${lead}\n\n${insight.title || '这组牌的关键联系'}：${trimText(`${insight.evidence || ''}${insight.meaning || ''}`, 280)}\n\n这是一条组合依据，不是单张关键词的简单相加；还要放回各自牌位和你的现实处境里核对。`;
+  }
   if (wantsLinks && context?.connections?.length) {
     return `${lead}\n\n${trimText(context.connections.slice(0, 2).join('；'), 260)}\n\n先不要把每张牌拆开看，真正值得观察的是它们共同指向的变化。`;
   }
@@ -285,12 +293,14 @@ export async function POST(request: Request) {
     '不要宣称能确定预测未来，不要制造宿命、恐惧或依赖。提供具体、可执行、尊重用户自主权的建议。',
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
     '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
+    '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
     '少用抽象名词和成串形容词。多用短句、具体动词和日常表达；能说“你其实已经很累了”，就不要说“你正处于能量失衡的状态”。',
     '不要把每段都写成“结论＋解释＋建议”的固定模板，不要连续使用“你可能”“这意味着”“提醒你”。允许自然停顿，也允许只把一个重点讲透。',
     '默认控制在120至240个汉字、两到三个短段落。除非用户明确要求详细分析，否则不要写标题、编号清单或完整报告，只挑最相关的一两张牌说清楚。',
     '结尾不必强行提问，也不要固定使用“你可以思考”“希望这能帮助你”之类的客服式句子。确实需要用户补充信息时，再自然地问一句。',
     '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
     '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
+    '“组合牌义知识库”提供经典双牌、同花色、重复数字、宫廷牌和起点到结果的结构证据。它用于修正单张牌义；引用时要说清是哪两张牌、落在哪些位置以及正逆位如何改变组合，不要把组合解释成固定预言。',
     agentEvidence(body.context, tools),
     contextText(body.context),
   ].join('\n\n');
