@@ -241,6 +241,8 @@ export async function POST(request: Request) {
   const input = [...history, { role: 'user' as const, content: message }];
 
   let upstream: Response;
+  const connectController = new AbortController();
+  const connectTimeout = setTimeout(() => connectController.abort(), 18000);
   try {
     upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -254,10 +256,14 @@ export async function POST(request: Request) {
         max_tokens: 520,
         stream: true,
       }),
-      signal: AbortSignal.timeout(18000),
+      signal: connectController.signal,
     });
   } catch {
     return localAgentResponse(message, body.context, tools, quota.remaining);
+  } finally {
+    // The timeout only guards establishing the upstream response. Keeping it
+    // active would abort a healthy SSE stream midway through a longer reply.
+    clearTimeout(connectTimeout);
   }
 
   if (!upstream.ok) {
