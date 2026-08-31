@@ -123,10 +123,17 @@ function extractCompletedText(value: unknown) {
   }).join('');
 }
 
+function upstreamErrorMessage(status: number) {
+  if (status === 429) return 'AI 服务当前繁忙或额度受限，请稍后再试。';
+  if (status === 401 || status === 403) return 'AI 服务认证暂时不可用，请联系站点维护者。';
+  if (status === 400 || status === 404) return 'AI 模型配置暂时不可用，请联系站点维护者。';
+  return 'AI 服务暂时无法完成解读，请稍后再试。';
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.MOYU_API_KEY;
   const baseUrl = (process.env.MOYU_BASE_URL || 'https://www.moyu.info/v1').replace(/\/$/, '');
-  const model = process.env.MOYU_MODEL || 'gpt-5.6-luna';
+  const model = process.env.MOYU_MODEL || 'gpt-5.4';
 
   if (!apiKey) {
     return Response.json({ error: 'AI 服务尚未完成服务器配置。' }, { status: 503 });
@@ -188,8 +195,14 @@ export async function POST(request: Request) {
   }
 
   if (!upstream.ok) {
+    const upstreamDetail = (await upstream.text().catch(() => '')).slice(0, 500);
+    console.error('[tarot-chat] Moyu request failed', {
+      status: upstream.status,
+      model,
+      detail: upstreamDetail,
+    });
     return Response.json(
-      { error: upstream.status === 429 ? 'AI 服务当前繁忙或额度受限，请稍后再试。' : 'AI 服务暂时无法完成解读。' },
+      { error: upstreamErrorMessage(upstream.status) },
       { status: upstream.status === 429 ? 429 : 502 },
     );
   }
