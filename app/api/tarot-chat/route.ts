@@ -29,6 +29,8 @@ type RequestBody = {
   context?: TarotContext;
 };
 
+type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'actions' | 'memory';
+
 const STYLE_PROMPTS = {
   gentle: '像一个温柔、熟悉用户的朋友：先回应感受，再给一两个真正有用的提醒。',
   analytical: '像一个头脑清楚的朋友：把关键牌面讲明白，说明推论，不说空泛套话。',
@@ -96,6 +98,72 @@ function contextText(context: TarotContext | undefined) {
   ].filter(Boolean).join('\n\n');
 }
 
+function selectAgentTools(message: string, body: RequestBody): AgentToolId[] {
+  const tools: AgentToolId[] = ['spread', 'meanings', 'patterns'];
+  if ((body.context?.cards?.length || 0) > 1) tools.push('links');
+  if (/怎么|应该|建议|行动|避免|接下来|选择|做什么/.test(message)) tools.push('actions');
+  if ((body.history?.length || 0) > 0) tools.push('memory');
+  return tools;
+}
+
+function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) {
+  const cards = Array.isArray(context?.cards) ? context.cards : [];
+  const evidence = [
+    tools.includes('spread') ? `[工具·读取牌阵] ${context?.spread?.name || '未知牌阵'}；${cards.map((card) => `${card.position || '牌位'}=${card.name || '未知牌'}${card.orientation ? `·${card.orientation}` : ''}`).join('；')}` : '',
+    tools.includes('meanings') ? `[工具·牌义检索] ${cards.map((card) => `${card.name || '未知牌'}：${card.keywords || '暂无关键词'}`).join('；')}` : '',
+    tools.includes('patterns') && context?.energy ? `[工具·结构分析] ${context.energy}` : '',
+    tools.includes('links') && context?.connections?.length ? `[工具·组合关系] ${context.connections.slice(0, 5).join('；')}` : '',
+    tools.includes('actions') && context?.actions ? `[工具·行动建议] 适合：${context.actions.doNow || '暂无'}；避免：${context.actions.avoid || '暂无'}；观察：${context.actions.watch || '暂无'}` : '',
+    tools.includes('memory') ? '[工具·对话记忆] 已读取本次牌阵最近的对话内容。' : '',
+  ].filter(Boolean);
+  return evidence.join('\n');
+}
+
+function trimText(value: string | undefined, maxLength: number) {
+  const text = value?.trim() || '';
+  return text.length > maxLength ? `${text.slice(0, maxLength).replace(/[，；、\s]+$/,'')}……` : text;
+}
+
+function localAgentText(message: string, context: TarotContext | undefined) {
+  const cards = Array.isArray(context?.cards) ? context.cards : [];
+  const reversed = cards.filter((card) => card.orientation === '逆位');
+  const lead = trimText(context?.verdict, 150)
+    || (cards.length ? `这组牌的重点落在${cards.slice(0, 2).map((card) => `${card.name || '这张牌'}${card.orientation ? `·${card.orientation}` : ''}`).join('与')}之间。` : '先把问题放回你当下最能影响的部分。');
+  const wantsLinks = /联系|关系|矛盾|组合|互相|主线/.test(message);
+  const wantsAction = /怎么|应该|建议|行动|避免|接下来|选择|做什么/.test(message);
+  const wantsReversed = /逆位|阻碍|卡住|困难/.test(message);
+
+  if (wantsLinks && context?.connections?.length) {
+    return `${lead}\n\n${trimText(context.connections.slice(0, 2).join('；'), 260)}\n\n先不要把每张牌拆开看，真正值得观察的是它们共同指向的变化。`;
+  }
+  if (wantsAction && context?.actions) {
+    return `${lead}\n\n现在适合：${trimText(context.actions.doNow, 120)}\n暂时避免：${trimText(context.actions.avoid, 110)}\n接下来观察：${trimText(context.actions.watch, 110)}`;
+  }
+  if (wantsReversed && reversed.length) {
+    const card = reversed[0];
+    return `${lead}\n\n${card.name || '这张逆位牌'}更像在提醒你留意“${trimText(card.keywords, 100) || '能量受阻'}”，而不是宣布一个坏结果。先找出哪里在勉强、拖延或过度消耗，再决定下一步。`;
+  }
+  return `${lead}${context?.synthesis ? `\n\n${trimText(context.synthesis, 280)}` : ''}${context?.actions?.watch ? `\n\n接下来可以观察：${trimText(context.actions.watch, 110)}` : ''}`;
+}
+
+function agentHeaders(tools: AgentToolId[], mode: 'model' | 'local', remaining: number) {
+  return {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-RateLimit-Remaining': String(remaining),
+    'X-Agent-Mode': mode,
+    'X-Agent-Tools': tools.join(','),
+  };
+}
+
+function localAgentResponse(message: string, context: TarotContext | undefined, tools: AgentToolId[], remaining: number) {
+  return new Response(localAgentText(message, context), {
+    status: 200,
+    headers: agentHeaders(tools, 'local', remaining),
+  });
+}
+
 function extractText(event: unknown) {
   if (!event || typeof event !== 'object') return '';
   const value = event as Record<string, unknown>;
@@ -127,21 +195,10 @@ function extractCompletedText(value: unknown) {
   }).join('');
 }
 
-function upstreamErrorMessage(status: number) {
-  if (status === 429) return 'AI 服务当前繁忙或额度受限，请稍后再试。';
-  if (status === 401 || status === 403) return 'AI 服务认证暂时不可用，请联系站点维护者。';
-  if (status === 400 || status === 404) return 'AI 模型配置暂时不可用，请联系站点维护者。';
-  return 'AI 服务暂时无法完成解读，请稍后再试。';
-}
-
 export async function POST(request: Request) {
   const apiKey = process.env.MOYU_API_KEY;
   const baseUrl = (process.env.MOYU_BASE_URL || 'https://www.moyu.info/v1').replace(/\/$/, '');
   const model = process.env.MOYU_MODEL || 'deepseek-v4-flash';
-
-  if (!apiKey) {
-    return Response.json({ error: 'AI 服务尚未完成服务器配置。' }, { status: 503 });
-  }
 
   let body: RequestBody;
   try {
@@ -162,6 +219,9 @@ export async function POST(request: Request) {
     );
   }
 
+  const tools = selectAgentTools(message, body);
+  if (!apiKey) return localAgentResponse(message, body.context, tools, quota.remaining);
+
   const style = body.style && body.style in STYLE_PROMPTS ? body.style : 'gentle';
   const instructions = [
     '你是“星契 Tarot”的塔罗对话伙伴，熟悉韦特体系。请始终使用简体中文。',
@@ -172,6 +232,8 @@ export async function POST(request: Request) {
     '说话要像真人聊天：先直接回答，不复述用户问题，不写“综合来看”“从牌面来看”等机械开场，不堆叠形容词，也不要每次都用相同结构。',
     '默认控制在180至320个汉字、两到四个短段落。除非用户明确要求详细分析，否则不要写标题、编号清单或完整报告；只挑最相关的两三张牌来说明。',
     '结尾可以自然地问一个贴近处境的小问题，但不要固定使用“你可以思考”之类的模板句。',
+    '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
+    agentEvidence(body.context, tools),
     contextText(body.context),
   ].join('\n\n');
 
@@ -192,9 +254,10 @@ export async function POST(request: Request) {
         max_tokens: 520,
         stream: true,
       }),
+      signal: AbortSignal.timeout(18000),
     });
   } catch {
-    return Response.json({ error: '暂时无法连接 AI 服务，请稍后再试。' }, { status: 502 });
+    return localAgentResponse(message, body.context, tools, quota.remaining);
   }
 
   if (!upstream.ok) {
@@ -204,22 +267,16 @@ export async function POST(request: Request) {
       model,
       detail: upstreamDetail,
     });
-    return Response.json(
-      { error: upstreamErrorMessage(upstream.status) },
-      { status: upstream.status === 429 ? 429 : 502 },
-    );
+    return localAgentResponse(message, body.context, tools, quota.remaining);
   }
 
   const contentType = upstream.headers.get('content-type') || '';
   if (!upstream.body || contentType.includes('application/json')) {
     const payload = await upstream.json().catch(() => null);
     const completed = extractCompletedText(payload);
-    if (!completed) return Response.json({ error: 'AI 服务未返回可读取的内容。' }, { status: 502 });
+    if (!completed) return localAgentResponse(message, body.context, tools, quota.remaining);
     return new Response(completed, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'X-RateLimit-Remaining': String(quota.remaining),
-      },
+      headers: agentHeaders(tools, 'model', quota.remaining),
     });
   }
 
@@ -268,7 +325,8 @@ export async function POST(request: Request) {
           if (emitted) return;
         }
       } catch {
-        controller.error(new Error('AI 流式响应中断'));
+        controller.enqueue(encoder.encode(`\n\n连接短暂中断，我先用本地牌义把重点补完整：\n${localAgentText(message, body.context)}`));
+        controller.close();
       }
     },
     cancel() {
@@ -277,11 +335,6 @@ export async function POST(request: Request) {
   });
 
   return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-      'X-RateLimit-Remaining': String(quota.remaining),
-    },
+    headers: agentHeaders(tools, 'model', quota.remaining),
   });
 }

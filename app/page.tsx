@@ -433,6 +433,7 @@ type DailyEntry = {
 };
 
 type ChatStyle = 'gentle' | 'analytical' | 'intuitive' | 'direct';
+type AgentMode = 'ready' | 'thinking' | 'model' | 'local';
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -460,6 +461,15 @@ const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string
   intuitive: { name: '直觉灵感', note: '强调意象、共鸣与内在声音', symbol: '✦' },
   direct: { name: '直言提醒', note: '坦率指出矛盾、盲点和代价', symbol: '↗' },
 };
+const agentToolLabels: Record<string, string> = {
+  spread: '读取当前牌阵',
+  meanings: '检索牌义证据',
+  patterns: '分析整体结构',
+  links: '追踪牌组联系',
+  actions: '生成行动建议',
+  memory: '读取本轮记忆',
+};
+const defaultAgentTools = ['读取当前牌阵','检索牌义证据','分析整体结构','本地解读兜底'];
 
 function cardImagePath(card: Pick<TarotCard, 'id' | 'arcana' | 'suit'>) {
   if (card.arcana !== 'minor') return `/cards/major-${String(card.id).padStart(2, '0')}.webp`;
@@ -827,6 +837,8 @@ export default function Home() {
   const [chatError, setChatError] = useState('');
   const [isChatStreaming, setIsChatStreaming] = useState(false);
   const [chatRemaining, setChatRemaining] = useState(DAILY_CHAT_LIMIT);
+  const [agentMode, setAgentMode] = useState<AgentMode>('ready');
+  const [agentTools, setAgentTools] = useState<string[]>(defaultAgentTools);
   const [skyMode, setSkyMode] = useState<SkyMode>('auto');
   const [skyPeriod, setSkyPeriod] = useState<SkyPeriod>('night');
   const fanRef = useRef<HTMLDivElement>(null);
@@ -1211,6 +1223,8 @@ export default function Home() {
     setChatMessages([]);
     setChatInput('');
     setChatError('');
+    setAgentMode('ready');
+    setAgentTools(defaultAgentTools);
     if (!readingChatKey) return;
     try {
       const chats = JSON.parse(localStorage.getItem(AI_CHAT_KEY) || '{}') as Record<string, SavedChat>;
@@ -1250,6 +1264,8 @@ export default function Home() {
     setChatInput('');
     setChatError('');
     setIsChatStreaming(true);
+    setAgentMode('thinking');
+    setAgentTools(['正在读取牌阵','正在整理牌义','正在分析关系']);
 
     try {
       const response = await fetch('/api/tarot-chat', {
@@ -1285,7 +1301,14 @@ export default function Home() {
         throw new Error(payload?.error || 'AI 暂时没有回应，请稍后再试。');
       }
 
-      consumeLocalChatQuota();
+      const responseMode = response.headers.get('X-Agent-Mode') === 'local' ? 'local' : 'model';
+      const toolLabels = (response.headers.get('X-Agent-Tools') || '')
+        .split(',')
+        .map((tool) => agentToolLabels[tool])
+        .filter((tool): tool is string => Boolean(tool));
+      setAgentMode(responseMode);
+      setAgentTools(toolLabels.length ? toolLabels : defaultAgentTools);
+      if (responseMode === 'model') consumeLocalChatQuota();
       const reader = response.body?.getReader();
       if (!reader) throw new Error('当前浏览器无法读取流式回复。');
       const decoder = new TextDecoder();
@@ -1317,6 +1340,8 @@ export default function Home() {
     } catch (error) {
       setChatMessages(baseMessages);
       setChatError(error instanceof Error ? error.message : 'AI 对话暂时不可用，请稍后再试。');
+      setAgentMode('ready');
+      setAgentTools(defaultAgentTools);
       saveChat(baseMessages);
     } finally {
       setIsChatStreaming(false);
@@ -2311,15 +2336,22 @@ export default function Home() {
                 <div className="ai-chat-heading">
                   <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
                   <div>
-                    <span>AI TAROT DIALOGUE</span>
-                    <h3 id="ai-chat-title">继续追问这一次牌阵</h3>
-                    <p>AI 已读取你的问题、牌阵位置、每张牌与正逆位，可以沿着当前解读继续深入。</p>
+                    <span>XINGQI TAROT AGENT · V1</span>
+                    <h3 id="ai-chat-title">星契塔罗智能体</h3>
+                    <p>先调用牌阵、牌义与组合工具，再组织回答；模型不可用时自动切回本地解读。</p>
                   </div>
                   <div className="ai-chat-quota"><b>{chatRemaining}</b><span>今日剩余</span></div>
                 </div>
 
+                <div className="ai-agent-status-row" aria-live="polite">
+                  <span className={`ai-agent-mode mode-${agentMode}`}><i />{agentMode === 'thinking' ? '正在分析' : agentMode === 'model' ? '模型协作' : agentMode === 'local' ? '本地解读' : '工具就绪'}</span>
+                  <div className="ai-agent-tools">
+                    {agentTools.map((tool) => <small key={tool}>✓ {tool}</small>)}
+                  </div>
+                </div>
+
                 <div className="ai-context-ribbon">
-                  <span>已连接当前牌阵</span>
+                  <span>智能体已连接当前牌阵</span>
                   <strong>{spreadInfo.name}</strong>
                   <small>{drawn.map((card) => `${card.name}${card.reversed ? '·逆' : ''}`).join(' · ')}</small>
                 </div>
@@ -2341,13 +2373,13 @@ export default function Home() {
                 <div className={`ai-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                   {chatMessages.length ? chatMessages.map((message) => (
                     <article className={`ai-message ${message.role}`} key={message.id}>
-                      <span className="ai-message-label">{message.role === 'assistant' ? chatStyles[chatStyle].name : '你'}</span>
+                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span>
                       <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
                     </article>
                   )) : (
                     <div className="ai-chat-welcome">
                       <span>✦</span>
-                      <p>你可以问得很具体。AI 会结合牌位与整组关系回答，而不是只重复单张牌义。</p>
+                      <p>你可以问得很具体。智能体会先读取牌阵、检索牌义并分析整组关系，再给你回应。</p>
                     </div>
                   )}
                   <div ref={chatEndRef} />
@@ -2387,7 +2419,7 @@ export default function Home() {
                 </div>
 
                 <div className="ai-chat-footer">
-                  <p>{chatError || '对话保存在这台设备；每天最多 8 次，次日自动恢复。AI 解读仅用于自我探索。'}</p>
+                  <p>{chatError || (agentMode === 'local' ? '模型通道暂时不可用，本轮已由星契本地牌义引擎完成，不消耗页面 AI 次数。' : '对话保存在这台设备；每天最多 8 次。智能体解读仅用于自我探索。')}</p>
                   {chatMessages.length > 0 && <button type="button" onClick={clearChat} disabled={isChatStreaming}><Trash2 aria-hidden="true" />清除对话</button>}
                 </div>
               </section>
