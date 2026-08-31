@@ -1563,15 +1563,22 @@ export default function Home() {
     showNotice('本次 AI 对话已从这台设备清除');
   }
 
-  function consumeLocalChatQuota() {
+  function consumeLocalChatQuota(serverRemaining?: number) {
     let used = 0;
     try {
       const saved = JSON.parse(localStorage.getItem(AI_USAGE_KEY) || '{}') as { date?: string; count?: number };
       used = saved.date === todayKey() && Number.isFinite(saved.count) ? Number(saved.count) : 0;
-      used += 1;
+      const serverUsed = Number.isFinite(serverRemaining)
+        ? DAILY_CHAT_LIMIT - Math.max(0, Math.min(DAILY_CHAT_LIMIT, Number(serverRemaining)))
+        : 0;
+      used = Math.min(DAILY_CHAT_LIMIT, Math.max(used + 1, serverUsed));
       localStorage.setItem(AI_USAGE_KEY, JSON.stringify({ date: todayKey(), count: used }));
     } catch {
-      used = DAILY_CHAT_LIMIT - chatRemaining + 1;
+      const localUsed = DAILY_CHAT_LIMIT - chatRemaining + 1;
+      const serverUsed = Number.isFinite(serverRemaining)
+        ? DAILY_CHAT_LIMIT - Math.max(0, Math.min(DAILY_CHAT_LIMIT, Number(serverRemaining)))
+        : 0;
+      used = Math.min(DAILY_CHAT_LIMIT, Math.max(localUsed, serverUsed));
     }
     setChatRemaining(Math.max(0, DAILY_CHAT_LIMIT - used));
   }
@@ -1625,7 +1632,8 @@ export default function Home() {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return true;
     }
-    if (/(澄清牌|补抽|再抽一张)/.test(message)) {
+    const isClarifierExplanation = /(?:解释|解读|分析|结合).{0,12}澄清牌|澄清牌.{0,12}(?:解释|解读|分析|修正|没有改变)/.test(message);
+    if (!isClarifierExplanation && /(?:补抽|再抽一张|抽.{0,8}澄清牌)/.test(message)) {
       if (clarifiers.length >= 3) {
         appendLocalAgentExchange(message, '这次已经有三张澄清牌了。再继续补抽会让主线变乱，我建议先把现有信息说清楚。');
         return true;
@@ -1689,9 +1697,12 @@ export default function Home() {
       });
     }
     const meaning = clarifier.reversed ? clarifier.reversedMeaning : clarifier.uprightMeaning;
+    const unchanged = integrated?.verdict
+      ? `它不会推翻原牌阵的核心判断：“${integrated.verdict}”`
+      : '它不会替换原牌阵，也不能单独变成一个新的结果。';
     const nextMessages: ChatMessage[] = [...chatMessages, {
       id: crypto.randomUUID(), role: 'assistant', createdAt: Date.now(), mode: 'local', tools: ['抽取澄清牌', '读取标准牌义'],
-      content: `你抽到的是${clarifier.name}·${clarifier.reversed ? '逆位' : '正位'}。它用来澄清“${clarifier.purpose}”。${meaning}`,
+      content: `澄清对象：${clarifier.purpose}\n\n直接补充：${clarifier.name}·${clarifier.reversed ? '逆位' : '正位'}把注意力放在“${meaning}”。\n\n${unchanged} 点击下方“结合原牌阵解读”，我会继续说明它具体修正了哪一部分。`,
     }].slice(-30);
     setChatMessages(nextMessages);
     saveChat(nextMessages);
@@ -1716,12 +1727,19 @@ export default function Home() {
     window.requestAnimationFrame(() => startRitual());
   }
 
-  async function sendChat(prefilled?: string, options?: { retry?: boolean }) {
+  function clarifierAnalysisPrompt() {
+    const list = clarifiers.map((card, index) =>
+      `${index + 1}. ${card.name}·${card.reversed ? '逆位' : '正位'}，澄清“${card.purpose}”`,
+    ).join('\n');
+    return `只解释已经抽出的澄清牌，不要继续抽牌，也不要建议再抽一张。\n${list}\n\n请明确回答四件事：\n1. 每张牌具体在澄清什么；\n2. 它给出的直接补充是什么；\n3. 它修正或收窄了原牌阵哪一部分；\n4. 原牌阵中哪些核心判断没有改变。\n如果证据不足以改变原结论，请直接说“没有足够依据改变原结论”，不要硬凑。`;
+  }
+
+  async function sendChat(prefilled?: string, options?: { retry?: boolean; bypassActions?: boolean }) {
     const lastUserIndex = options?.retry ? chatMessages.findLastIndex((item) => item.role === 'user') : -1;
     const retryMessage = lastUserIndex >= 0 ? chatMessages[lastUserIndex].content : '';
     const message = (prefilled ?? (retryMessage || chatInput)).trim();
     if (!message || isChatStreaming || !drawn.length) return;
-    if (!options?.retry && handleAgentActionRequest(message)) {
+    if (!options?.retry && !options?.bypassActions && handleAgentActionRequest(message)) {
       setChatInput('');
       return;
     }
@@ -1840,8 +1858,13 @@ export default function Home() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string } | null;
+        if (response.status === 429) setChatRemaining(0);
         throw new Error(payload?.error || 'AI 暂时没有回应，请稍后再试。');
       }
+
+      const serverRemainingHeader = response.headers.get('X-RateLimit-Remaining');
+      const serverRemaining = serverRemainingHeader === null ? undefined : Number(serverRemainingHeader);
+      consumeLocalChatQuota(Number.isFinite(serverRemaining) ? serverRemaining : undefined);
 
       responseMode = response.headers.get('X-Agent-Mode') === 'local' ? 'local' : 'model';
       const returnedTools = (response.headers.get('X-Agent-Tools') || '')
@@ -1880,7 +1903,6 @@ export default function Home() {
       const finalMode: AgentMode = usedLocalFallback ? 'local' : 'model';
       const answerEvidence = currentAnswerEvidence();
       setAgentMode(finalMode);
-      if (finalMode === 'model') consumeLocalChatQuota();
       const completed = [
         ...baseMessages,
         { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode, evidence: answerEvidence },
@@ -2507,7 +2529,7 @@ export default function Home() {
       {clarifiers.length > 0 && <section className="agent-clarifier-results" aria-label="已抽取的澄清牌">
         <div className="agent-clarifier-results-heading"><div><span>澄清牌 · {clarifiers.length}/3</span><p>这些牌只修正对应问题，不会覆盖原牌阵。</p></div>{clarifiers.length < 3 && <button type="button" onClick={() => setPendingAgentAction({ type: 'clarifier', title: '再补抽一张澄清牌', description: '新牌会作为额外证据加入当前对话，确认后由你亲手选择。', purpose: '继续澄清当前牌阵尚未说清的部分' })}><Plus />再抽一张</button>}</div>
         <div className="agent-clarifier-cards">{clarifiers.map((card, index) => <article key={`clarifier-result-${card.id}`}><div><img className={card.reversed ? 'is-reversed' : ''} src={cardImagePath(card)} alt={`${card.name}${card.reversed ? '逆位' : '正位'}牌面`} /></div><span>澄清牌 {index + 1}</span><b>{card.name} · {card.reversed ? '逆位' : '正位'}</b><small>{card.purpose}</small></article>)}</div>
-        <button className="agent-clarifier-analyze" type="button" onClick={() => void sendChat('请把刚补抽的澄清牌放回原牌阵中，说明它修正了哪一部分，以及没有改变什么。')} disabled={isChatStreaming || chatRemaining <= 0}><Sparkles />结合原牌阵解读澄清牌</button>
+        <button className="agent-clarifier-analyze" type="button" onClick={() => void sendChat(clarifierAnalysisPrompt(), { bypassActions: true })} disabled={isChatStreaming || chatRemaining <= 0}><Sparkles />结合原牌阵解读澄清牌</button>
       </section>}
     </>;
   }

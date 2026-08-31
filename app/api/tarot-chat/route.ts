@@ -108,17 +108,24 @@ function cleanMessages(value: unknown): ChatMessage[] {
 
 function contextText(context: TarotContext | undefined) {
   const cards = Array.isArray(context?.cards) ? context.cards.slice(0, 13) : [];
-  const lines = cards.map((card, index) =>
+  const originalCards = cards.filter((card) => !card.position?.startsWith('澄清牌'));
+  const clarifierCards = cards.filter((card) => card.position?.startsWith('澄清牌'));
+  const lines = originalCards.map((card, index) =>
     `${index + 1}. ${card.position || '牌位'}：${card.name || '未知牌'}（${card.orientation || '未知方向'}）` +
     `；体系：${card.arcana || '未知'}${card.suit ? `／${card.suit}` : ''}${card.element ? `／${card.element}` : ''}` +
     `；关键词：${card.keywords || '无'}；标准牌义：${card.meaning || '无'}；位置关注：${card.focus || '无'}` +
     `；图像象征：${card.symbolism || '无'}`,
   );
+  const clarifierLines = clarifierCards.map((card, index) =>
+    `${index + 1}. ${card.position || '澄清牌'}：${card.name || '未知牌'}（${card.orientation || '未知方向'}）` +
+    `；直接牌义：${card.meaning || card.keywords || '无'}；限制：${card.focus || '只能补充原牌阵'}`,
+  );
 
   return [
     `用户问题：${context?.question?.slice(0, 800) || '未填写，请围绕牌阵本身进行开放式解读'}`,
     `牌阵：${context?.spread?.name || '未知牌阵'}`,
-    `当前牌面：\n${lines.join('\n') || '暂无牌面'}`,
+    `原牌阵牌面：\n${lines.join('\n') || '暂无牌面'}`,
+    clarifierLines.length ? `已经抽出的澄清牌（只解释，不得再次抽牌）：\n${clarifierLines.join('\n')}` : '',
     context?.verdict ? `直接结论：${context.verdict.slice(0, 1200)}` : '',
     context?.synthesis ? `现有综合解读：${context.synthesis.slice(0, 1800)}` : '',
     Array.isArray(context?.connections) && context.connections.length ? `关键牌组联系：\n${context.connections.slice(0, 7).map((item) => item.slice(0, 900)).join('\n')}` : '',
@@ -168,6 +175,8 @@ function trimText(value: unknown, maxLength: number) {
 
 function localAgentBase(message: string, context: TarotContext | undefined) {
   const cards = Array.isArray(context?.cards) ? context.cards : [];
+  const originalCards = cards.filter((card) => !card.position?.startsWith('澄清牌'));
+  const clarifierCards = cards.filter((card) => card.position?.startsWith('澄清牌'));
   const reversed = cards.filter((card) => card.orientation === '逆位');
   const lead = trimText(context?.verdict, 150)
     || (cards.length ? `这组牌的重点落在${cards.slice(0, 2).map((card) => `${card.name || '这张牌'}${card.orientation ? `·${card.orientation}` : ''}`).join('与')}之间。` : '先把问题放回你当下最能影响的部分。');
@@ -176,6 +185,16 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
   const wantsReversed = /逆位|阻碍|卡住|困难/.test(message);
   const wantsJournal = /日记|复盘|后来|回看|发生/.test(message);
   const wantsCompare = /对比|比较|变化|重复|几次|多次/.test(message);
+  const wantsClarifier = /澄清牌/.test(message) && /解释|解读|分析|修正|没有改变|只解释/.test(message);
+
+  if (wantsClarifier && clarifierCards.length) {
+    const explanations = clarifierCards.map((card) => {
+      const purpose = card.position?.split('·').slice(1).join('·') || card.focus || '原牌阵中尚未说清的部分';
+      return `澄清对象：${purpose}\n直接补充：${card.name || '这张牌'}·${card.orientation || '方向未知'}指向“${trimText(card.meaning || card.keywords, 180) || '需要回到现实信息核对'}”。\n修正之处：它把这个问题从宽泛趋势收窄到上述具体表现，但没有足够依据推翻整副牌。`;
+    }).join('\n\n');
+    const unchanged = trimText(context?.verdict, 220) || (originalCards.length ? `原牌阵仍要以${originalCards.slice(0,2).map((card) => card.name || '原牌').join('与')}形成的主线为准。` : '原牌阵的核心走向仍然保留。');
+    return `${explanations}\n\n没有改变：${unchanged}\n\n这次只解释已经抽出的澄清牌，不需要再补抽。`;
+  }
 
   if (wantsCompare && (context?.comparisons?.length || 0) > 1) {
     const records = context?.comparisons || [];
@@ -322,7 +341,7 @@ export async function POST(request: Request) {
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
     '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
     '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
-    '标为“澄清牌”的牌只用于补充它对应的具体疑问。必须先以原牌阵为主，再说明澄清牌修正了什么、没有改变什么；不得让澄清牌覆盖原牌阵。',
+    '只要问题涉及已经抽出的“澄清牌”，就禁止建议或执行继续抽牌。必须依次明确写出：①澄清对象；②直接补充；③修正或收窄了原牌阵哪一部分；④原牌阵中没有改变的核心判断。证据不足时直说“没有足够依据改变原结论”。澄清牌不得覆盖原牌阵。',
     '少用抽象名词和成串形容词。多用短句、具体动词和日常表达；能说“你其实已经很累了”，就不要说“你正处于能量失衡的状态”。',
     '不要把每段都写成“结论＋解释＋建议”的固定模板，不要连续使用“你可能”“这意味着”“提醒你”。允许自然停顿，也允许只把一个重点讲透。',
     lengthConfig.instruction,
@@ -358,7 +377,7 @@ export async function POST(request: Request) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, max_tokens: partial ? Math.min(900, lengthConfig.maxTokens) : lengthConfig.maxTokens, stream: false }),
+        body: JSON.stringify({ model, messages, max_tokens: lengthConfig.maxTokens, stream: false }),
         signal: retryController.signal,
       });
       if (!response.ok) return '';
@@ -368,6 +387,20 @@ export async function POST(request: Request) {
     } finally {
       clearTimeout(retryTimeout);
     }
+  }
+
+  async function completeInterruptedText(partial: string, forceContinuation = false) {
+    let combined = partial;
+    const additions: string[] = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (!forceContinuation && replyLooksComplete(combined)) break;
+      const continued = await retryCompletedText(combined);
+      if (!continued) break;
+      additions.push(continued);
+      combined = `${combined}\n\n${continued}`;
+      forceContinuation = false;
+    }
+    return additions.join('\n\n');
   }
 
   let upstream: Response | null = null;
@@ -447,8 +480,8 @@ export async function POST(request: Request) {
       const retried = await retryCompletedText();
       controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length)}`));
     } else if (finishReason === 'length' || !replyLooksComplete(emittedText)) {
-      const continued = await retryCompletedText(emittedText);
-      const supplement = continued || localAgentText(message, body.context, length);
+      const continued = await completeInterruptedText(emittedText, finishReason === 'length');
+      const supplement = continued || '——刚才的句子没有传完整。先保留已经说清的部分，不用据此仓促下结论；你可以点“重新生成”让我完整说一遍。';
       controller.enqueue(encoder.encode(`\n\n${supplement}`));
     }
     controller.close();
@@ -482,8 +515,8 @@ export async function POST(request: Request) {
           const retried = await retryCompletedText();
           controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length)}`));
         } else {
-          const continued = await retryCompletedText(emittedText);
-          controller.enqueue(encoder.encode(`\n\n${continued || localAgentText(message, body.context, length)}`));
+          const continued = await completeInterruptedText(emittedText, true);
+          controller.enqueue(encoder.encode(`\n\n${continued || '——刚才的句子没有传完整。先保留已经说清的部分，不用据此仓促下结论；你可以点“重新生成”让我完整说一遍。'}`));
         }
         controller.close();
       }
