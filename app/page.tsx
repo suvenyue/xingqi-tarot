@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeftRight, BookOpen, Bot, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Sunrise, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, BookOpen, Bot, ChevronRight, Clock3, Copy, Download, Link2, MessageCircle, MoonStar, RotateCcw, Save, Send, Shuffle, Sparkles, Square, Sunrise, Trash2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -439,6 +439,8 @@ type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+  tools?: string[];
+  mode?: AgentMode;
 };
 type SavedChat = { style: ChatStyle; messages: ChatMessage[]; updatedAt: number };
 type AgentMemory = { enabled: boolean; note: string };
@@ -847,6 +849,7 @@ export default function Home() {
   const [agentMemoryNote, setAgentMemoryNote] = useState('');
   const [agentSourceId, setAgentSourceId] = useState<string | null>(null);
   const [agentJournalEnabled, setAgentJournalEnabled] = useState(false);
+  const [agentLabOpen, setAgentLabOpen] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const [skyMode, setSkyMode] = useState<SkyMode>('auto');
   const [skyPeriod, setSkyPeriod] = useState<SkyPeriod>('night');
@@ -862,6 +865,7 @@ export default function Home() {
   const trailRef = useRef<HTMLCanvasElement>(null);
   const interpretationsRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
   const ritualTimersRef = useRef<number[]>([]);
   const burstTimerRef = useRef<number | null>(null);
   const holdFrameRef = useRef<number | null>(null);
@@ -1032,6 +1036,7 @@ export default function Home() {
   useEffect(() => {
     setChatError('');
     setChatInput('');
+    setAgentJournalEnabled(false);
     if (!readingChatKey) {
       setChatMessages([]);
       setChatStyle('gentle');
@@ -1329,17 +1334,25 @@ export default function Home() {
     setChatRemaining(Math.max(0, DAILY_CHAT_LIMIT - used));
   }
 
-  async function sendChat(prefilled?: string) {
-    const message = (prefilled ?? chatInput).trim();
+  async function sendChat(prefilled?: string, options?: { retry?: boolean }) {
+    const lastUserIndex = options?.retry ? chatMessages.findLastIndex((item) => item.role === 'user') : -1;
+    const retryMessage = lastUserIndex >= 0 ? chatMessages[lastUserIndex].content : '';
+    const message = (prefilled ?? (retryMessage || chatInput)).trim();
     if (!message || isChatStreaming || !drawn.length) return;
     if (chatRemaining <= 0) {
       setChatError('今天的 8 次 AI 对话已经用完，明天会自动恢复。');
       return;
     }
 
+    const conversationSeed = lastUserIndex >= 0 ? chatMessages.slice(0,lastUserIndex) : chatMessages;
     const userMessage: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: message, createdAt: Date.now() };
     const assistantId = crypto.randomUUID();
-    const baseMessages = [...chatMessages, userMessage];
+    const baseMessages = [...conversationSeed, userMessage];
+    const abortController = new AbortController();
+    let assistantText = '';
+    let responseMode: AgentMode = 'model';
+    let toolLabels = defaultAgentTools;
+    chatAbortRef.current = abortController;
     setChatMessages([...baseMessages, { id: assistantId, role: 'assistant', content: '', createdAt: Date.now() }]);
     setChatInput('');
     setChatError('');
@@ -1351,10 +1364,11 @@ export default function Home() {
       const response = await fetch('/api/tarot-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: abortController.signal,
         body: JSON.stringify({
           message,
           style: chatStyle,
-          history: chatMessages.slice(-8).map(({ role, content }) => ({ role, content })),
+          history: conversationSeed.slice(-8).map(({ role, content }) => ({ role, content })),
           context: {
             question,
             spread: { name: spreadInfo.name, positions: spreadInfo.positions.map((position) => position.name) },
@@ -1402,18 +1416,17 @@ export default function Home() {
         throw new Error(payload?.error || 'AI 暂时没有回应，请稍后再试。');
       }
 
-      const responseMode = response.headers.get('X-Agent-Mode') === 'local' ? 'local' : 'model';
-      const toolLabels = (response.headers.get('X-Agent-Tools') || '')
+      responseMode = response.headers.get('X-Agent-Mode') === 'local' ? 'local' : 'model';
+      const returnedTools = (response.headers.get('X-Agent-Tools') || '')
         .split(',')
         .map((tool) => agentToolLabels[tool])
         .filter((tool): tool is string => Boolean(tool));
+      toolLabels = returnedTools.length ? returnedTools : defaultAgentTools;
       setAgentMode(responseMode);
-      setAgentTools(toolLabels.length ? toolLabels : defaultAgentTools);
-      if (responseMode === 'model') consumeLocalChatQuota();
+      setAgentTools(toolLabels);
       const reader = response.body?.getReader();
       if (!reader) throw new Error('当前浏览器无法读取流式回复。');
       const decoder = new TextDecoder();
-      let assistantText = '';
       let lastRenderedAt = 0;
 
       while (true) {
@@ -1432,21 +1445,54 @@ export default function Home() {
 
       assistantText += decoder.decode();
       if (!assistantText.trim()) throw new Error('AI 没有返回可读取的内容，请重试。');
+      const localMarker = '【本地解读】';
+      const usedLocalFallback = responseMode === 'local' || assistantText.trimStart().startsWith(localMarker);
+      const displayText = assistantText.trimStart().startsWith(localMarker)
+        ? assistantText.trimStart().slice(localMarker.length).trimStart()
+        : assistantText;
+      const finalMode: AgentMode = usedLocalFallback ? 'local' : 'model';
+      setAgentMode(finalMode);
+      if (finalMode === 'model') consumeLocalChatQuota();
       const completed = [
         ...baseMessages,
-        { id: assistantId, role: 'assistant' as const, content: assistantText, createdAt: Date.now() },
+        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode },
       ];
       setChatMessages(completed);
       saveChat(completed);
     } catch (error) {
-      setChatMessages(baseMessages);
-      setChatError(error instanceof Error ? error.message : 'AI 对话暂时不可用，请稍后再试。');
-      setAgentMode('ready');
-      setAgentTools(defaultAgentTools);
-      saveChat(baseMessages);
+      if (abortController.signal.aborted) {
+        const partial = assistantText.trim();
+        const stoppedMessages = partial
+          ? [...baseMessages, { id: assistantId, role: 'assistant' as const, content: partial, createdAt: Date.now(), tools: toolLabels, mode: responseMode }]
+          : baseMessages;
+        setChatMessages(stoppedMessages);
+        setChatError('已停止生成。你可以继续追问，或重新生成上一条回答。');
+        setAgentMode(partial ? responseMode : 'ready');
+        saveChat(stoppedMessages);
+      } else {
+        setChatMessages(baseMessages);
+        setChatError(error instanceof Error ? error.message : 'AI 对话暂时不可用，请稍后再试。');
+        setAgentMode('ready');
+        setAgentTools(defaultAgentTools);
+        saveChat(baseMessages);
+      }
     } finally {
+      if (chatAbortRef.current === abortController) chatAbortRef.current = null;
       setIsChatStreaming(false);
     }
+  }
+
+  function stopChat() {
+    chatAbortRef.current?.abort();
+  }
+
+  function retryLastChat() {
+    const lastUser = [...chatMessages].reverse().find((item) => item.role === 'user');
+    if (!lastUser) {
+      showNotice('还没有可以重新生成的问题');
+      return;
+    }
+    void sendChat(lastUser.content,{ retry: true });
   }
 
   function tiltCard(event: ReactPointerEvent<HTMLElement>) {
@@ -1531,6 +1577,7 @@ export default function Home() {
     setChoiceOptionB(record.optionB || restoredChoice?.optionB || '');
     setDrawn(restored);
     setAgentSourceId(record.id);
+    setAgentJournalEnabled(false);
     setIsSharedReading(false);
     setView('reading');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1569,6 +1616,32 @@ export default function Home() {
     } catch {
       showNotice('复制失败，请长按对话文字复制');
     }
+  }
+
+  function saveAgentSummary() {
+    const lastAnswer = [...chatMessages].reverse().find((item) => item.role === 'assistant' && item.content.trim());
+    if (!lastAnswer) {
+      showNotice('还没有可以保存的智能体总结');
+      return;
+    }
+    const time = new Intl.DateTimeFormat('zh-CN',{ month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+    const summary = `【智能体总结 ${time}】\n${lastAnswer.content.trim().slice(0,900)}`;
+    if (activeAgentRecord) {
+      const previous = activeAgentRecord.notes?.reflection?.trim();
+      updateDiaryNote(activeAgentRecord.id,'reflection',`${previous ? `${previous}\n\n` : ''}${summary}`.slice(-1800));
+      showNotice('智能体总结已保存到这条塔罗日记');
+      return;
+    }
+    const record = makeReading(drawn);
+    const savedRecord: SavedReading = { ...record, notes: { reflection: summary, updatedAt: Date.now() } };
+    setHistory((current) => {
+      const next = [savedRecord,...current].slice(0,MAX_HISTORY_ITEMS);
+      localStorage.setItem(HISTORY_KEY,JSON.stringify(next));
+      return next;
+    });
+    setAgentSourceId(savedRecord.id);
+    setAgentJournalEnabled(false);
+    showNotice('本次牌阵与智能体总结已保存到塔罗日记');
   }
 
   function removeHistory(id: string) {
@@ -2783,6 +2856,13 @@ export default function Home() {
                   }) : <p className="agent-no-source">保存过的牌阵会出现在这里，方便以后继续追问。</p>}
                 </div>
                 <button type="button" className="agent-new-reading" onClick={() => setView('reading')}><MoonStar />重新抽一组牌<ChevronRight /></button>
+                <details className="agent-source-mobile">
+                  <summary>切换塔罗日记 <ChevronRight /></summary>
+                  <div>
+                    {history.length ? history.slice(0,4).map((record) => <button type="button" key={`agent-mobile-source-${record.id}`} onClick={() => loadAgentReading(record)}><span>{spreadDefinitions[record.spread].name}</span><b>{record.question || '没有写下问题'}</b><small>{formatDiaryDate(record.createdAt)}</small></button>) : <p>还没有保存过的牌阵。</p>}
+                    <button type="button" className="agent-mobile-new-reading" onClick={() => setView('reading')}><MoonStar />重新抽一组牌</button>
+                  </div>
+                </details>
               </aside>
 
               <div className="agent-main-column">
@@ -2799,8 +2879,8 @@ export default function Home() {
                 </section>
 
                 <section className="agent-capability-lab" aria-labelledby="agent-lab-title">
-                  <div className="agent-lab-heading"><div><span>04 · PERSONAL CONTEXT</span><h2 id="agent-lab-title">让智能体真正理解你的变化</h2></div><small>所有设置仅保存在当前设备</small></div>
-                  <div className="agent-capability-grid">
+                  <div className="agent-lab-heading"><div><span>04 · PERSONAL CONTEXT</span><h2 id="agent-lab-title">让智能体真正理解你的变化</h2></div><div className="agent-lab-controls"><small>所有设置仅保存在当前设备</small><button type="button" className="agent-lab-toggle" aria-expanded={agentLabOpen} onClick={() => setAgentLabOpen((current) => !current)}>{agentLabOpen ? '收起工具' : '展开工具'}<ChevronRight /></button></div></div>
+                  <div className={`agent-capability-grid ${agentLabOpen ? 'open' : ''}`}>
                     <article className="agent-memory-card">
                       <div className="agent-capability-title"><span>长期记忆</span><button type="button" role="switch" aria-checked={agentMemoryEnabled} className={agentMemoryEnabled ? 'active' : ''} onClick={() => saveAgentMemory(!agentMemoryEnabled,agentMemoryNote)}><i />{agentMemoryEnabled ? '已开启' : '未开启'}</button></div>
                       <p>主动告诉智能体需要长期记住的背景。关闭后，内容仍留在设备中，但不会发送给模型。</p>
@@ -2846,7 +2926,7 @@ export default function Home() {
                   </div>
 
                   <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
-                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p></article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
+                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>{message.role === 'assistant' && message.content && <details className="ai-message-evidence"><summary>查看回答依据 <ChevronRight /></summary><div><span>{message.mode === 'local' ? '本地韦特牌义' : 'AI 模型协作'}</span><p>{(message.tools?.length ? message.tools : agentTools).join(' · ')}</p><small>依据当前「{spreadInfo.name}」的 {drawn.length} 张牌、牌位与正逆位生成；它表达的是解读路径，不是事实证明。</small></div></details>}</article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
                     <div ref={chatEndRef} />
                   </div>
 
@@ -2861,7 +2941,7 @@ export default function Home() {
 
                   <div className="ai-chat-footer">
                     <p>{chatError || (agentMode === 'local' ? '模型暂时不可用，本轮已自动切换为本地牌义，不消耗页面 AI 次数。' : '对话自动保存在当前设备；智能体解读用于自我探索，不替代现实判断。')}</p>
-                    <div className="agent-chat-actions"><button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
+                    <div className="agent-chat-actions">{isChatStreaming ? <button type="button" className="stop" onClick={stopChat}><Square />停止生成</button> : <><button type="button" onClick={retryLastChat} disabled={!chatMessages.some((message) => message.role === 'user') || chatRemaining <= 0}><RotateCcw />重新生成</button><button type="button" onClick={saveAgentSummary} disabled={!chatMessages.some((message) => message.role === 'assistant' && message.content.trim())}><Save />保存总结</button></>}<button type="button" onClick={() => void copyChatTranscript()} disabled={!chatMessages.length || isChatStreaming}><Copy />复制对话</button><button type="button" onClick={clearChat} disabled={!chatMessages.length || isChatStreaming}><Trash2 />清除</button></div>
                   </div>
                 </section>
               </div>

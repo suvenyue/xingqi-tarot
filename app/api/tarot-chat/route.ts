@@ -266,32 +266,55 @@ export async function POST(request: Request) {
 
   const history = cleanMessages(body.history);
   const input = [...history, { role: 'user' as const, content: message }];
+  const requestPayload = (stream: boolean) => JSON.stringify({
+    model,
+    messages: [{ role: 'system', content: instructions }, ...input],
+    max_tokens: 520,
+    stream,
+  });
 
-  let upstream: Response;
-  const connectController = new AbortController();
-  const connectTimeout = setTimeout(() => connectController.abort(), 18000);
-  try {
-    upstream = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'system', content: instructions }, ...input],
-        max_tokens: 520,
-        stream: true,
-      }),
-      signal: connectController.signal,
-    });
-  } catch {
-    return localAgentResponse(message, body.context, tools, quota.remaining);
-  } finally {
-    // The timeout only guards establishing the upstream response. Keeping it
-    // active would abort a healthy SSE stream midway through a longer reply.
-    clearTimeout(connectTimeout);
+  async function retryCompletedText() {
+    const retryController = new AbortController();
+    const retryTimeout = setTimeout(() => retryController.abort(), 18000);
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: requestPayload(false),
+        signal: retryController.signal,
+      });
+      if (!response.ok) return '';
+      return extractCompletedText(await response.json().catch(() => null)).trim();
+    } catch {
+      return '';
+    } finally {
+      clearTimeout(retryTimeout);
+    }
   }
+
+  let upstream: Response | null = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const connectController = new AbortController();
+    const connectTimeout = setTimeout(() => connectController.abort(), 18000);
+    try {
+      upstream = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: requestPayload(true),
+        signal: connectController.signal,
+      });
+      if (upstream.ok || ![429,500,502,503,504].includes(upstream.status) || attempt === 1) break;
+      await upstream.body?.cancel().catch(() => undefined);
+      upstream = null;
+    } catch {
+      upstream = null;
+      if (attempt === 1) break;
+    } finally {
+      clearTimeout(connectTimeout);
+    }
+  }
+
+  if (!upstream) return localAgentResponse(message, body.context, tools, quota.remaining);
 
   if (!upstream.ok) {
     const upstreamDetail = (await upstream.text().catch(() => '')).slice(0, 500);
@@ -317,6 +340,7 @@ export async function POST(request: Request) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = '';
+  let emittedAny = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -329,8 +353,15 @@ export async function POST(request: Request) {
               const raw = line.startsWith('data:') ? line.slice(5).trim() : line;
               if (raw && raw !== '[DONE]') {
                 const delta = extractText(JSON.parse(raw));
-                if (delta) controller.enqueue(encoder.encode(delta));
+                if (delta) {
+                  controller.enqueue(encoder.encode(delta));
+                  emittedAny = true;
+                }
               }
+            }
+            if (!emittedAny) {
+              const retried = await retryCompletedText();
+              controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
             }
             controller.close();
             return;
@@ -349,6 +380,7 @@ export async function POST(request: Request) {
               const delta = extractText(JSON.parse(raw));
               if (delta) {
                 controller.enqueue(encoder.encode(delta));
+                emittedAny = true;
                 emitted = true;
               }
             } catch {
@@ -358,7 +390,12 @@ export async function POST(request: Request) {
           if (emitted) return;
         }
       } catch {
-        controller.enqueue(encoder.encode(`\n\n连接短暂中断，我先用本地牌义把重点补完整：\n${localAgentText(message, body.context)}`));
+        if (!emittedAny) {
+          const retried = await retryCompletedText();
+          controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
+        } else {
+          controller.enqueue(encoder.encode(`\n\n连接短暂中断，我先用本地牌义把重点补完整：\n${localAgentText(message, body.context)}`));
+        }
         controller.close();
       }
     },
