@@ -51,10 +51,10 @@ type RequestBody = {
 type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'actions' | 'memory' | 'journal' | 'compare';
 
 const STYLE_PROMPTS = {
-  gentle: '像一个温柔、熟悉用户的朋友：先回应感受，再给一两个真正有用的提醒。',
-  analytical: '像一个头脑清楚的朋友：把关键牌面讲明白，说明推论，不说空泛套话。',
-  intuitive: '像一个直觉敏锐的朋友：可以有一点诗意和联想，但说话自然，并落回现实。',
-  direct: '像一个愿意说真话的朋友：直接指出矛盾和盲点，语气坦率但不刻薄。',
+  gentle: '像一个真正关心用户、但不会过度安慰的朋友。先接住最具体的感受，再说一两个有用的观察。',
+  analytical: '像一个头脑清楚、表达利落的朋友。把推论讲明白，但不要写成报告或分析模板。',
+  intuitive: '像一个直觉敏锐、说话有温度的朋友。允许一点联想，但不要故作神秘，最后要落回现实。',
+  direct: '像一个愿意说真话的朋友。直接指出矛盾和盲点，可以坦率，但不要审判、训话或吓人。',
 } as const;
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -236,6 +236,20 @@ function extractCompletedText(value: unknown) {
   }).join('');
 }
 
+function extractFinishReason(value: unknown) {
+  if (!value || typeof value !== 'object') return '';
+  const choices = (value as { choices?: unknown }).choices;
+  if (!Array.isArray(choices)) return '';
+  const reason = (choices[0] as { finish_reason?: unknown } | undefined)?.finish_reason;
+  return typeof reason === 'string' ? reason : '';
+}
+
+function replyLooksComplete(value: string) {
+  const text = value.trim();
+  if (!text) return false;
+  return /[。！？!?…」』”’）)]$/.test(text);
+}
+
 export async function POST(request: Request) {
   const apiKey = process.env.MOYU_API_KEY;
   const baseUrl = (process.env.MOYU_BASE_URL || 'https://www.moyu.info/v1').replace(/\/$/, '');
@@ -270,9 +284,11 @@ export async function POST(request: Request) {
     '必须严格围绕提供的牌阵、牌位、正逆位和用户问题回答；若信息不足，请明确说明这是可能性而非事实。',
     '不要宣称能确定预测未来，不要制造宿命、恐惧或依赖。提供具体、可执行、尊重用户自主权的建议。',
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
-    '说话要像真人聊天：先直接回答，不复述用户问题，不写“综合来看”“从牌面来看”等机械开场，不堆叠形容词，也不要每次都用相同结构。',
-    '默认控制在180至320个汉字、两到四个短段落。除非用户明确要求详细分析，否则不要写标题、编号清单或完整报告；只挑最相关的两三张牌来说明。',
-    '结尾可以自然地问一个贴近处境的小问题，但不要固定使用“你可以思考”之类的模板句。',
+    '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
+    '少用抽象名词和成串形容词。多用短句、具体动词和日常表达；能说“你其实已经很累了”，就不要说“你正处于能量失衡的状态”。',
+    '不要把每段都写成“结论＋解释＋建议”的固定模板，不要连续使用“你可能”“这意味着”“提醒你”。允许自然停顿，也允许只把一个重点讲透。',
+    '默认控制在120至240个汉字、两到三个短段落。除非用户明确要求详细分析，否则不要写标题、编号清单或完整报告，只挑最相关的一两张牌说清楚。',
+    '结尾不必强行提问，也不要固定使用“你可以思考”“希望这能帮助你”之类的客服式句子。确实需要用户补充信息时，再自然地问一句。',
     '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
     '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
     agentEvidence(body.context, tools),
@@ -284,18 +300,26 @@ export async function POST(request: Request) {
   const requestPayload = (stream: boolean) => JSON.stringify({
     model,
     messages: [{ role: 'system', content: instructions }, ...input],
-    max_tokens: 520,
+    max_tokens: 1200,
     stream,
   });
 
-  async function retryCompletedText() {
+  async function retryCompletedText(partial = '') {
     const retryController = new AbortController();
     const retryTimeout = setTimeout(() => retryController.abort(), 18000);
     try {
+      const messages = partial
+        ? [
+            { role: 'system', content: instructions },
+            ...input,
+            { role: 'assistant', content: partial },
+            { role: 'user', content: '上一段在半句话处断了。请只接着没说完的地方继续，用一至两个自然短段落收尾，不要重复前文，不要解释断线。' },
+          ]
+        : [{ role: 'system', content: instructions }, ...input];
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: requestPayload(false),
+        body: JSON.stringify({ model, messages, max_tokens: partial ? 700 : 1200, stream: false }),
         signal: retryController.signal,
       });
       if (!response.ok) return '';
@@ -356,6 +380,40 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   let buffer = '';
   let emittedAny = false;
+  let emittedText = '';
+  let finishReason = '';
+
+  const readSseLine = (line: string, controller: ReadableStreamDefaultController<Uint8Array>) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return false;
+    const raw = trimmed.slice(5).trim();
+    if (!raw) return false;
+    if (raw === '[DONE]') return false;
+    try {
+      const payload = JSON.parse(raw);
+      finishReason = extractFinishReason(payload) || finishReason;
+      const delta = extractText(payload);
+      if (!delta) return false;
+      controller.enqueue(encoder.encode(delta));
+      emittedText += delta;
+      emittedAny = true;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const finishStream = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    if (!emittedAny) {
+      const retried = await retryCompletedText();
+      controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
+    } else if (finishReason === 'length' || !replyLooksComplete(emittedText)) {
+      const continued = await retryCompletedText(emittedText);
+      const supplement = continued || localAgentText(message, body.context);
+      controller.enqueue(encoder.encode(`\n\n${supplement}`));
+    }
+    controller.close();
+  };
 
   const stream = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -363,22 +421,11 @@ export async function POST(request: Request) {
         while (true) {
           const { value, done } = await reader.read();
           if (done) {
+            buffer += decoder.decode();
             if (buffer.trim()) {
-              const line = buffer.trim();
-              const raw = line.startsWith('data:') ? line.slice(5).trim() : line;
-              if (raw && raw !== '[DONE]') {
-                const delta = extractText(JSON.parse(raw));
-                if (delta) {
-                  controller.enqueue(encoder.encode(delta));
-                  emittedAny = true;
-                }
-              }
+              buffer.split(/\r?\n/).forEach((line) => readSseLine(line, controller));
             }
-            if (!emittedAny) {
-              const retried = await retryCompletedText();
-              controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
-            }
-            controller.close();
+            await finishStream(controller);
             return;
           }
 
@@ -387,20 +434,7 @@ export async function POST(request: Request) {
           buffer = lines.pop() || '';
           let emitted = false;
           for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data:')) continue;
-            const raw = trimmed.slice(5).trim();
-            if (!raw || raw === '[DONE]') continue;
-            try {
-              const delta = extractText(JSON.parse(raw));
-              if (delta) {
-                controller.enqueue(encoder.encode(delta));
-                emittedAny = true;
-                emitted = true;
-              }
-            } catch {
-              // Ignore malformed heartbeat lines from an upstream SSE connection.
-            }
+            emitted = readSseLine(line, controller) || emitted;
           }
           if (emitted) return;
         }
@@ -409,7 +443,8 @@ export async function POST(request: Request) {
           const retried = await retryCompletedText();
           controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context)}`));
         } else {
-          controller.enqueue(encoder.encode(`\n\n连接短暂中断，我先用本地牌义把重点补完整：\n${localAgentText(message, body.context)}`));
+          const continued = await retryCompletedText(emittedText);
+          controller.enqueue(encoder.encode(`\n\n${continued || localAgentText(message, body.context)}`));
         }
         controller.close();
       }
