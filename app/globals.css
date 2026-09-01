@@ -54,6 +54,7 @@ main { position: relative; }
 .site-nav button { display: flex; align-items: center; gap: 6px; padding: 9px 14px; border: 0; border-radius: 999px; background: transparent; color: #877a90; font-size: 11px; cursor: pointer; transition: .2s ease; }
 .site-nav button:hover,.site-nav button.active { color: #f0dfc4; background: #2b1b3c; }
 .site-nav svg { width: 14px; color: #d5ae68; }
+.nav-reminder-count { display: grid; place-items: center; min-width: 16px; height: 16px; margin-left: 1px; padding: 0 4px; border-radius: 999px; background: #d5ae68; color: #160f20; font: 700 8px/1 system-ui,sans-serif; box-shadow: 0 0 12px rgba(213,174,104,.34); }
 .site-notice { position: fixed; left: 50%; top: 78px; z-index: 80; transform: translateX(-50%); padding: 11px 18px; border: 1px solid rgba(213,174,104,.32); border-radius: 999px; background: rgba(29,18,42,.96); color: #ead6ae; box-shadow: 0 16px 36px rgba(0,0,0,.35); font-size: 11px; animation: slotArrive .35s ease both; }
 
 .reading-shell { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 60px 40px 72px; display: grid; grid-template-columns: minmax(320px,.78fr) minmax(520px,1.22fr); gap: 78px; align-items: start; }
@@ -518,11 +519,23 @@ footer span { letter-spacing: .2em; } footer p { margin: 0; font-family: var(--f
 .diary-ai-result summary small { color: #666e7d; font-size: 7px; }
 .diary-ai-result summary svg { width: 13px; transition: transform .2s ease; }
 .diary-ai-result[open] summary svg { transform: rotate(90deg); }
-.diary-ai-result > p { margin: 0; padding: 14px; border-top: 1px solid rgba(116,161,219,.09); color: #aaa0af; font: 10px/1.8 var(--font-serif); white-space: pre-wrap; }
+.diary-correction-compare { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1px; border-top: 1px solid rgba(116,161,219,.09); background: rgba(116,161,219,.08); }
+.diary-correction-compare article { min-width: 0; padding: 15px; background: rgba(7,11,25,.94); }
+.diary-correction-compare article.revised { grid-column: 1 / -1; background: linear-gradient(135deg,rgba(30,24,47,.96),rgba(8,13,28,.96)); }
+.diary-correction-compare span,.diary-correction-compare b,.diary-correction-compare p { display: block; }
+.diary-correction-compare span { color: #788ba7; font-size: 7px; letter-spacing: .13em; }
+.diary-correction-compare b { margin-top: 8px; color: #d7caba; font: 500 11px/1.65 var(--font-serif); }
+.diary-correction-compare p { margin: 7px 0 0; color: #958b9d; font: 9px/1.75 var(--font-serif); white-space: pre-wrap; }
+.diary-correction-compare strong { color: #b8a783; font-weight: 500; }
 .diary-saved-status { margin: 11px 2px 0; color: #615a6c; font-size: 7px; text-align: right; }
 @keyframes journalOpen { from { opacity: 0; transform: translateY(-7px); } to { opacity: 1; transform: none; } }
 
 @media (max-width: 760px) {
+  .diary-reminder-banner { width: calc(100% - 28px); grid-template-columns: 38px minmax(0,1fr); gap: 11px; margin-top: 14px; padding: 12px; }
+  .diary-reminder-orbit { width: 36px; height: 36px; }
+  .diary-reminder-banner p { white-space: normal; }
+  .diary-reminder-actions { grid-column: 1 / -1; padding-left: 48px; }
+  .diary-reminder-actions button { padding-inline: 8px; }
   .choice-question-builder { grid-template-columns: 1fr; }
   .choice-divider { display: none; }
   .choice-question-preview { grid-column: 1; }
@@ -533,6 +546,8 @@ footer span { letter-spacing: .2em; } footer p { margin: 0; font-family: var(--f
   .diary-delete { justify-self: end; }
   .diary-details { padding: 19px 14px 22px; }
   .diary-review-timeline { grid-template-columns: 1fr; }
+  .diary-correction-compare { grid-template-columns: 1fr; }
+  .diary-correction-compare article.revised { grid-column: auto; }
   .diary-spread-review ol,.diary-note-grid { grid-template-columns: 1fr; }
   .diary-note-grid label > small { min-height: 0; }
   .diary-note-grid textarea { min-height: 112px; }
@@ -1101,6 +1116,33 @@ body::before {
 .site-nav button:hover { color: #f7f0e2; background: rgba(255,255,255,.055); }
 .site-nav button.active { color: #f7e7c2; background: linear-gradient(135deg,rgba(228,198,129,.19),rgba(139,105,169,.13)); box-shadow: inset 0 0 0 1px rgba(228,198,129,.12); }
 .site-notice { top: 92px; background: rgba(12,13,29,.94); backdrop-filter: blur(10px); }
+.diary-reminder-banner {
+  position: relative;
+  z-index: 4;
+  width: min(1180px,calc(100% - 48px));
+  display: grid;
+  grid-template-columns: 48px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin: 18px auto -18px;
+  padding: 13px 15px;
+  border: 1px solid rgba(228,198,129,.17);
+  border-radius: 18px;
+  background: radial-gradient(circle at 0 50%,rgba(228,198,129,.1),transparent 30%),linear-gradient(120deg,rgba(19,16,36,.88),rgba(11,14,31,.83));
+  box-shadow: 0 18px 46px rgba(0,0,0,.2),inset 0 1px rgba(255,255,255,.025);
+  backdrop-filter: blur(12px);
+}
+.diary-reminder-orbit { display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid rgba(228,198,129,.26); border-radius: 50%; color: #dcc17d; box-shadow: inset 0 0 18px rgba(228,198,129,.07),0 0 20px rgba(228,198,129,.05); }
+.diary-reminder-orbit svg { width: 17px; }
+.diary-reminder-banner span,.diary-reminder-banner b,.diary-reminder-banner p { display: block; }
+.diary-reminder-banner span { color: #b89c63; font-size: 7px; letter-spacing: .18em; }
+.diary-reminder-banner b { margin-top: 3px; color: #e4d8c4; font: 500 12px/1.35 var(--font-serif); }
+.diary-reminder-banner p { overflow: hidden; max-width: 660px; margin: 3px 0 0; color: #81788b; font: 8px/1.5 var(--font-serif); text-overflow: ellipsis; white-space: nowrap; }
+.diary-reminder-actions { display: flex; align-items: center; gap: 5px; }
+.diary-reminder-actions button { min-height: 32px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; color: #776e80; font: 8px/1 var(--font-serif); cursor: pointer; }
+.diary-reminder-actions button:hover { color: #ddceb2; background: rgba(255,255,255,.04); }
+.diary-reminder-actions button.primary { display: inline-flex; align-items: center; gap: 4px; border: 1px solid rgba(228,198,129,.22); background: rgba(228,198,129,.09); color: #e5d1a6; }
+.diary-reminder-actions button svg { width: 12px; }
 
 .reading-shell {
   max-width: 1320px;
@@ -1904,6 +1946,12 @@ footer { color: #747184; }
 .ai-message-evidence > div span { color: #9ab0d0; font-size: 8px; }
 .ai-message-evidence > div p { margin: 5px 0 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: #82788a; font: 8px/1.55 var(--font-serif); }
 .ai-message-evidence > div small { display: block; margin-top: 5px; color: #625b69; font-size: 7px; line-height: 1.5; }
+.ai-answer-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 9px 5px 2px; }
+.ai-answer-feedback > span { margin-right: 2px; color: #6f6777; font-size: 8px; }
+.ai-answer-feedback button { min-height: 27px; padding: 0 9px; border: 1px solid rgba(214,182,111,.11); border-radius: 999px; background: rgba(255,255,255,.018); color: #817688; font: 8px/1 var(--font-serif); cursor: pointer; transition: .18s ease; }
+.ai-answer-feedback button:hover { border-color: rgba(214,182,111,.28); color: #d6c29c; }
+.ai-answer-feedback button.active { border-color: rgba(214,182,111,.32); background: rgba(214,182,111,.09); color: #e1c992; }
+.ai-answer-feedback button:disabled { cursor: wait; opacity: .5; }
 .ai-typing { display: inline-flex; align-items: center; gap: 4px; min-height: 12px; }
 .ai-typing i { width: 4px; height: 4px; border-radius: 50%; background: #d7b56f; animation: aiTyping 1.15s ease-in-out infinite; }
 .ai-typing i:nth-child(2) { animation-delay: .16s; }
@@ -2778,6 +2826,11 @@ body {
 .ai-message-evidence li { padding: 7px 8px; border-left: 2px solid rgba(138,165,211,.23); background: rgba(15,20,38,.35); color: #94899b; font: 10px/1.6 var(--font-serif); }
 
 @media (max-width: 760px) {
+  .diary-reminder-banner { width: calc(100% - 28px); grid-template-columns: 38px minmax(0,1fr); gap: 11px; margin-top: 14px; padding: 12px; }
+  .diary-reminder-orbit { width: 36px; height: 36px; }
+  .diary-reminder-banner p { white-space: normal; }
+  .diary-reminder-actions { grid-column: 1 / -1; padding-left: 48px; }
+  .diary-reminder-actions button { padding-inline: 8px; }
   .cloud-account-chip { top: 76px; right: 10px; grid-template-columns: 24px auto; max-width: 190px; padding: 7px 8px; }
   .cloud-account-chip > span { display: none; }
   .cloud-account-chip a { min-height: 34px; font-size: 10px; }
@@ -2786,4 +2839,6 @@ body {
   .view-agent .agent-workflow-panel,.view-agent .agent-capability-lab { content-visibility: auto; contain-intrinsic-size: 1px 520px; }
   .view-agent .twinkle-star:nth-child(n+14) { display: none; }
   .view-agent .ai-message-evidence li { font-size: 11px; }
+  .view-agent .ai-answer-feedback > span,.view-agent .ai-answer-feedback button { font-size: 10px; }
+  .view-agent .ai-answer-feedback button { min-height: 34px; }
 }
