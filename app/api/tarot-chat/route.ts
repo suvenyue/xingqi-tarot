@@ -423,7 +423,7 @@ export async function POST(request: Request) {
 
   async function retryCompletedText(partial = '') {
     const retryController = new AbortController();
-    const retryTimeout = setTimeout(() => retryController.abort(), 12000);
+    const retryTimeout = setTimeout(() => retryController.abort(), 25000);
     try {
       const messages = partial
         ? [
@@ -439,9 +439,16 @@ export async function POST(request: Request) {
         body: JSON.stringify({ model, messages, max_tokens: responseConfig.maxTokens, stream: false }),
         signal: retryController.signal,
       });
-      if (!response.ok) return '';
+      if (!response.ok) {
+        console.error('[tarot-chat] completion retry failed', { status: response.status, model });
+        return '';
+      }
       return extractCompletedText(await response.json().catch(() => null)).trim();
-    } catch {
+    } catch (error) {
+      console.error('[tarot-chat] completion retry unavailable', {
+        model,
+        error: error instanceof Error ? error.name : 'unknown',
+      });
       return '';
     } finally {
       clearTimeout(retryTimeout);
@@ -463,22 +470,33 @@ export async function POST(request: Request) {
   }
 
   let upstream: Response | null = null;
-  for (let attempt = 0; attempt < 1; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const connectController = new AbortController();
-    const connectTimeout = setTimeout(() => connectController.abort(), 12000);
+    const connectTimeout = setTimeout(() => connectController.abort(), 25000);
     try {
-      upstream = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: requestPayload(true),
         signal: connectController.signal,
       });
-      if (upstream.ok || ![429,500,502,503,504].includes(upstream.status) || attempt === 0) break;
-      await upstream.body?.cancel().catch(() => undefined);
-      upstream = null;
-    } catch {
-      upstream = null;
-      if (attempt === 0) break;
+      const retryable = [429,500,502,503,504].includes(response.status);
+      if (response.ok || !retryable || attempt === 1) {
+        upstream = response;
+        break;
+      }
+      console.warn('[tarot-chat] upstream temporarily unavailable, retrying', {
+        status: response.status,
+        model,
+        attempt: attempt + 1,
+      });
+      await response.body?.cancel().catch(() => undefined);
+    } catch (error) {
+      console.error('[tarot-chat] upstream connection unavailable', {
+        model,
+        attempt: attempt + 1,
+        error: error instanceof Error ? error.name : 'unknown',
+      });
     } finally {
       clearTimeout(connectTimeout);
     }
