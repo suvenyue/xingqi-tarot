@@ -2978,6 +2978,7 @@ export default function Home() {
         ) : (
         <>
         <div className="intro-panel">
+          <div className="hero-astrarium" aria-hidden="true"><span /><i /><b>☾</b></div>
           <p className="eyebrow"><span /> A QUIET MOMENT FOR YOU</p>
           <h1>让牌面映见<br />你心中的答案</h1>
           <p className="intro-copy">完整收录22张大阿卡纳与56张小阿卡纳，依据韦特体系的经典象征与正逆位牌义，照亮你已经感受到、却还没说出口的事。</p>
@@ -2985,12 +2986,14 @@ export default function Home() {
 
           <div className="spread-switch spread-catalog" aria-label="选择牌阵">
             {(Object.entries(spreadDefinitions) as [Spread, SpreadDefinition][]).map(([key, definition]) => (
-              <button key={key} className={spread === key ? 'active' : ''} onClick={() => changeSpread(key)}>
+              <button key={key} data-spread={key} className={spread === key ? 'active' : ''} onClick={() => changeSpread(key)}>
                 <span>{definition.name}</span><small>{definition.countLabel} · {definition.description}</small>
               </button>
             ))}
           </div>
 
+          <div className="section-ornament ornament-moon" aria-hidden="true"><i /><span>☾</span><i /></div>
+          <div className="oracle-desk">
           <div className="question-label"><span>{spread === 'choice' ? '写下你正在比较的两个选项' : '你想询问什么？'}</span><span>{spread === 'choice' ? '必填两个更清晰' : '可选'}</span></div>
           {spread === 'choice' ? (
             <div className="choice-question-builder" aria-label="二选一问题">
@@ -3017,9 +3020,11 @@ export default function Home() {
             {drawn.length > 0 && <Button variant="ghost" onClick={reset} className="reset-button" aria-label="清除本次抽牌"><RotateCcw aria-hidden="true" /> 清空</Button>}
           </div>
           <p className="ritual-note">闭上眼睛，缓慢呼吸三次，然后在心里默念你的问题。</p>
+          </div>
         </div>
 
         <div className="table-panel" aria-live="polite">
+          <div className="moon-gate-lines" aria-hidden="true"><i /><i /><span>☾</span></div>
           {revealBurst && drawn.length > 0 && (
             <div className="element-burst" aria-hidden="true">
               {drawn.map((card, index) => {
@@ -3714,7 +3719,12 @@ export default function Home() {
         </section>
       )}
 
-      <footer><span>星契 TAROT</span><p>把牌当作一面镜子，把选择留在自己手中。</p></footer>
+      <footer className="site-footer">
+        <span className="footer-seal" aria-hidden="true"><i>☾</i><b>✦</b></span>
+        <span className="footer-brand">星契 TAROT</span>
+        <p>没有标准答案，只有值得被你听见的提醒。</p>
+        <small>把牌当作一面镜子，把选择留在自己手中。</small>
+      </footer>
     </main>
   );
 }
