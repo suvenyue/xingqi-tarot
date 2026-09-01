@@ -3275,7 +3275,7 @@ export default function Home() {
                 <div className={`ai-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                   {chatMessages.length ? chatMessages.map((message) => (
                     <article className={`ai-message ${message.role}`} key={message.id}>
-                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span>
+                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}${message.mode === 'local' ? ' · 本地回应' : ''}` : '你'}</span>
                       <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
                     </article>
                   )) : (
@@ -3670,7 +3670,7 @@ export default function Home() {
 
                   <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                     {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}>
-                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span>
+                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}${message.mode === 'local' ? ' · 本地回应' : ''}` : '你'}</span>
                       <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
                       {message.role === 'assistant' && Boolean(message.combinations?.length) && <section className="ai-combination-evidence" aria-label="组合牌义依据">
                         <div className="ai-combination-heading"><Sparkles /><span>这段判断用到了 {message.combinations?.length} 组组合依据</span></div>

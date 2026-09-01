@@ -94,7 +94,7 @@ function consumeServerQuota(request: Request) {
   return { allowed: true, remaining: SERVER_LIMIT - bucket.count, resetAt: bucket.resetAt };
 }
 
-function cleanMessages(value: unknown): ChatMessage[] {
+function cleanMessages(value: unknown, limit = 8, maxLength = 3000): ChatMessage[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((item): item is ChatMessage => {
@@ -102,8 +102,24 @@ function cleanMessages(value: unknown): ChatMessage[] {
       const candidate = item as ChatMessage;
       return (candidate.role === 'user' || candidate.role === 'assistant') && typeof candidate.content === 'string';
     })
-    .slice(-8)
-    .map((item) => ({ role: item.role, content: item.content.slice(0, 3000) }));
+    .slice(-limit)
+    .map((item) => ({ role: item.role, content: item.content.slice(0, maxLength) }));
+}
+
+function isNaturalFollowUp(message: string) {
+  if (message.length > 140) return false;
+  const asksForReading = /解牌|解读|分析|重新解释|牌阵|牌位|正位|逆位|组合|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能/.test(message);
+  return !asksForReading;
+}
+
+function compactContextText(context: TarotContext | undefined) {
+  const cards = Array.isArray(context?.cards) ? context.cards.slice(0,13) : [];
+  return [
+    `原始问题：${trimText(context?.question,260) || '未填写'}`,
+    `牌阵背景：${context?.spread?.name || '未知牌阵'}；${cards.map((card) => `${card.position || '牌位'}=${card.name || '未知牌'}·${card.orientation || '方向未知'}（${trimText(card.keywords,36) || '无关键词'}）`).join('；')}`,
+    context?.verdict ? `先前核心判断：${trimText(context.verdict,320)}` : '',
+    '以上只作为已经发生过的对话背景。当前优先回应用户刚说的话，不要主动重讲整副牌。',
+  ].filter(Boolean).join('\n');
 }
 
 function contextText(context: TarotContext | undefined) {
@@ -139,6 +155,11 @@ function contextText(context: TarotContext | undefined) {
 }
 
 function selectAgentTools(message: string, body: RequestBody): AgentToolId[] {
+  if (isNaturalFollowUp(message)) {
+    const tools: AgentToolId[] = ['spread'];
+    if ((body.history?.length || 0) > 0) tools.push('memory');
+    return tools;
+  }
   const tools: AgentToolId[] = ['spread', 'meanings', 'patterns'];
   if ((body.context?.cards?.length || 0) > 1) tools.push('links');
   if ((body.context?.combinations?.length || 0) > 0) tools.push('combinations');
@@ -184,7 +205,25 @@ function fitCompleteText(value: string, maxLength: number) {
   return `${window.replace(/[，；、：\s]+$/,'')}。`;
 }
 
+function localConversationText(message: string, context: TarotContext | undefined) {
+  const hasRelationshipContext = /感情|关系|恋爱/.test(context?.spread?.name || '') || /关系|对方|TA|他|她|男友|女友/.test(context?.question || '');
+  if (hasRelationshipContext && /想.*(在一起|继续|挽回|坚持)|不想.*(分开|失去)|舍不得|放不下|还爱/.test(message)) {
+    return '我知道。你现在不是不知道这段关系有问题，而是即使知道，还是舍不得放手。想继续在一起没有错，但别让“我很想”替代了“他有没有一起努力”。你可以先不逼自己马上离开，只观察一个最现实的信号：他会不会主动沟通、承担关系，而不是一直由你一个人维持。';
+  }
+  if (/难过|伤心|想哭|崩溃|很累|累了|痛苦|受不了/.test(message)) {
+    return '先别急着分析牌。你现在是真的难受，这件事本身就值得被认真对待。今天可以先把决定放一放，照顾好自己；等情绪稍微落下来，我们再一起分清楚，究竟是这段关系让你累，还是失去它的想象让你害怕。';
+  }
+  if (/害怕|担心|焦虑|不安|慌|怕/.test(message)) {
+    return '我听见你的担心了。现在不用马上把它变成一个结论，也不需要靠不断抽牌来压住不安。你可以先告诉我，你最害怕发生的具体事情是什么；把那个画面说清楚后，我们再看牌阵里有没有真正支持它的证据。';
+  }
+  if (/不知道|说不清|很乱|迷茫|纠结/.test(message)) {
+    return '没关系，不必现在就把一切说清楚。你可以只说最卡住的那一小部分：是舍不得、看不到对方的态度，还是不知道自己该不该继续？我们先聊一个点，不重新把整副牌讲一遍。';
+  }
+  return `我有在听。你刚才说的是你的真实感受，不需要立刻被整理成一份牌阵报告。${hasRelationshipContext ? '先说说此刻最让你放不下的是什么，我会顺着你的话聊；只有需要时，才拿一两张相关牌来核对。' : '你可以继续把最在意的那一部分说出来，我们先把这件事聊明白，再决定要不要回到牌面。'}`;
+}
+
 function localAgentBase(message: string, context: TarotContext | undefined) {
+  if (isNaturalFollowUp(message)) return localConversationText(message,context);
   const cards = Array.isArray(context?.cards) ? context.cards : [];
   const originalCards = cards.filter((card) => !card.position?.startsWith('澄清牌'));
   const clarifierCards = cards.filter((card) => card.position?.startsWith('澄清牌'));
@@ -237,6 +276,7 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
 
 function localAgentText(message: string, context: TarotContext | undefined, length: keyof typeof LENGTH_PROMPTS = 'standard') {
   const base = localAgentBase(message, context);
+  if (isNaturalFollowUp(message)) return fitCompleteText(base,260);
   if (length === 'brief') return fitCompleteText(base, 220);
   if (length === 'standard') {
     const action = context?.actions?.doNow ? `\n\n更实际一点，现在可以先做：${trimText(context.actions.doNow, 130)}` : '';
@@ -332,6 +372,10 @@ export async function POST(request: Request) {
   const message = body.message?.trim().slice(0, 2000) || '';
   const length = body.length && body.length in LENGTH_PROMPTS ? body.length : 'standard';
   const lengthConfig = LENGTH_PROMPTS[length];
+  const naturalFollowUp = isNaturalFollowUp(message);
+  const responseConfig = naturalFollowUp
+    ? { instruction: '这是自然对话追问。先接住用户此刻的话，用80至220个汉字、两三个自然短段落回应。除非确实有帮助，最多引用一张牌；禁止重述整副牌、原问题、牌阵结构或完整结论。', maxTokens: 520 }
+    : lengthConfig;
   if (!message) return Response.json({ error: '请先输入你想继续询问的内容。' }, { status: 400 });
   if (!body.context?.cards?.length) return Response.json({ error: '请先完成一次抽牌，再开始牌阵对话。' }, { status: 400 });
 
@@ -349,37 +393,37 @@ export async function POST(request: Request) {
   const style = body.style && body.style in STYLE_PROMPTS ? body.style : 'gentle';
   const instructions = [
     '你是“星契 Tarot”的塔罗对话伙伴，熟悉韦特体系。请始终使用简体中文。',
-    STYLE_PROMPTS[style],
-    '必须严格围绕提供的牌阵、牌位、正逆位和用户问题回答；若信息不足，请明确说明这是可能性而非事实。',
     '不要宣称能确定预测未来，不要制造宿命、恐惧或依赖。提供具体、可执行、尊重用户自主权的建议。',
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
+    naturalFollowUp ? compactContextText(body.context) : `${agentEvidence(body.context, tools)}\n\n${contextText(body.context)}`,
+    STYLE_PROMPTS[style],
+    '必须严格围绕提供的牌阵、牌位、正逆位和用户问题回答；若信息不足，请明确说明这是可能性而非事实。',
+    naturalFollowUp ? '当前是连续对话，不是新一轮解牌。把上一轮牌阵当作背景，不要抢着分析。先回应用户表达的情绪、愿望或犹豫；可以像朋友一样说“我知道”“我听见了”，但不要假装拥有人的经历。' : '',
     '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
-    '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
-    '只要问题涉及已经抽出的“澄清牌”，就禁止建议或执行继续抽牌。必须依次明确写出：①澄清对象；②直接补充；③修正或收窄了原牌阵哪一部分；④原牌阵中没有改变的核心判断。证据不足时直说“没有足够依据改变原结论”。澄清牌不得覆盖原牌阵。',
+    naturalFollowUp ? '' : '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
+    naturalFollowUp ? '' : '只要问题涉及已经抽出的“澄清牌”，就禁止建议或执行继续抽牌。必须依次明确写出：①澄清对象；②直接补充；③修正或收窄了原牌阵哪一部分；④原牌阵中没有改变的核心判断。证据不足时直说“没有足够依据改变原结论”。澄清牌不得覆盖原牌阵。',
     '少用抽象名词和成串形容词。多用短句、具体动词和日常表达；能说“你其实已经很累了”，就不要说“你正处于能量失衡的状态”。',
     '不要把每段都写成“结论＋解释＋建议”的固定模板，不要连续使用“你可能”“这意味着”“提醒你”。允许自然停顿，也允许只把一个重点讲透。',
-    lengthConfig.instruction,
     '结尾不必强行提问，也不要固定使用“你可以思考”“希望这能帮助你”之类的客服式句子。确实需要用户补充信息时，再自然地问一句。',
-    '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
-    '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
-    '“组合牌义知识库”提供经典双牌、同花色、重复数字、宫廷牌和起点到结果的结构证据。它用于修正单张牌义；引用时要说清是哪两张牌、落在哪些位置以及正逆位如何改变组合，不要把组合解释成固定预言。',
-    '当用户要求根据日记事实修正旧解读时，事实优先于牌义。必须区分已经验证、没有发生、无法确认和原先过度推断；不得为了证明塔罗准确而重新包装没有发生的内容。',
-    agentEvidence(body.context, tools),
-    contextText(body.context),
-  ].join('\n\n');
+    naturalFollowUp ? '' : '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
+    naturalFollowUp ? '' : '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
+    naturalFollowUp ? '' : '“组合牌义知识库”提供经典双牌、同花色、重复数字、宫廷牌和起点到结果的结构证据。它用于修正单张牌义；引用时要说清是哪两张牌、落在哪些位置以及正逆位如何改变组合，不要把组合解释成固定预言。',
+    naturalFollowUp ? '' : '当用户要求根据日记事实修正旧解读时，事实优先于牌义。必须区分已经验证、没有发生、无法确认和原先过度推断；不得为了证明塔罗准确而重新包装没有发生的内容。',
+    responseConfig.instruction,
+  ].filter(Boolean).join('\n\n');
 
-  const history = cleanMessages(body.history);
+  const history = cleanMessages(body.history,naturalFollowUp ? 6 : 8,naturalFollowUp ? 1000 : 2200);
   const input = [...history, { role: 'user' as const, content: message }];
   const requestPayload = (stream: boolean) => JSON.stringify({
     model,
     messages: [{ role: 'system', content: instructions }, ...input],
-    max_tokens: lengthConfig.maxTokens,
+    max_tokens: responseConfig.maxTokens,
     stream,
   });
 
   async function retryCompletedText(partial = '') {
     const retryController = new AbortController();
-    const retryTimeout = setTimeout(() => retryController.abort(), 18000);
+    const retryTimeout = setTimeout(() => retryController.abort(), 12000);
     try {
       const messages = partial
         ? [
@@ -392,7 +436,7 @@ export async function POST(request: Request) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, messages, max_tokens: lengthConfig.maxTokens, stream: false }),
+        body: JSON.stringify({ model, messages, max_tokens: responseConfig.maxTokens, stream: false }),
         signal: retryController.signal,
       });
       if (!response.ok) return '';
@@ -407,7 +451,7 @@ export async function POST(request: Request) {
   async function completeInterruptedText(partial: string, forceContinuation = false) {
     let combined = partial;
     const additions: string[] = [];
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < 1; attempt += 1) {
       if (!forceContinuation && replyLooksComplete(combined)) break;
       const continued = await retryCompletedText(combined);
       if (!continued) break;
@@ -419,9 +463,9 @@ export async function POST(request: Request) {
   }
 
   let upstream: Response | null = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < 1; attempt += 1) {
     const connectController = new AbortController();
-    const connectTimeout = setTimeout(() => connectController.abort(), 18000);
+    const connectTimeout = setTimeout(() => connectController.abort(), 12000);
     try {
       upstream = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
@@ -429,12 +473,12 @@ export async function POST(request: Request) {
         body: requestPayload(true),
         signal: connectController.signal,
       });
-      if (upstream.ok || ![429,500,502,503,504].includes(upstream.status) || attempt === 1) break;
+      if (upstream.ok || ![429,500,502,503,504].includes(upstream.status) || attempt === 0) break;
       await upstream.body?.cancel().catch(() => undefined);
       upstream = null;
     } catch {
       upstream = null;
-      if (attempt === 1) break;
+      if (attempt === 0) break;
     } finally {
       clearTimeout(connectTimeout);
     }
