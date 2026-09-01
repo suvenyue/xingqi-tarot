@@ -108,8 +108,12 @@ function cleanMessages(value: unknown, limit = 8, maxLength = 3000): ChatMessage
 
 function isNaturalFollowUp(message: string) {
   if (message.length > 140) return false;
-  const asksForReading = /解牌|解读|分析|重新解释|牌阵|牌位|正位|逆位|组合|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能/.test(message);
+  const asksForReading = /解牌|解读|分析|重新解释|牌面|牌阵|牌位|正位|逆位|组合|联系|结构|元素|比例|矛盾|冲突|拉扯|盲点|忽略|遗漏|依据|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能/.test(message);
   return !asksForReading;
+}
+
+function isContradictionRequest(message: string) {
+  return /矛盾|冲突|拉扯|盲点|忽略|遗漏|没注意|没有注意/.test(message);
 }
 
 function compactContextText(context: TarotContext | undefined) {
@@ -231,6 +235,7 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
   const lead = trimText(context?.verdict, 150)
     || (cards.length ? `这组牌的重点落在${cards.slice(0, 2).map((card) => `${card.name || '这张牌'}${card.orientation ? `·${card.orientation}` : ''}`).join('与')}之间。` : '先把问题放回你当下最能影响的部分。');
   const wantsLinks = /联系|关系|矛盾|组合|互相|主线/.test(message);
+  const wantsContradiction = isContradictionRequest(message);
   const wantsAction = /怎么|应该|建议|行动|避免|接下来|选择|做什么/.test(message);
   const wantsReversed = /逆位|阻碍|卡住|困难/.test(message);
   const wantsJournal = /日记|复盘|后来|回看|发生/.test(message);
@@ -255,6 +260,41 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
     const missed = trimText(context.journal.missed, 160) || '尚未记录明确没有发生的部分';
     const outcome = trimText(context.journal.outcome || context.journal.review30 || context.journal.review7, 200) || '还没有补写可确认的后续事实';
     return `现实验证：${outcome}\n\n得到验证：${verified}\n没有发生：${missed}\n\n需要修正：旧解读只能保留与上述事实直接对应的部分；其余判断应降级为当时的可能性，不能事后硬套。现在更贴近事实的理解是，先依据已经发生的行为调整判断，再把牌义当作复盘线索，而不是结果证明。`;
+  }
+
+  if (wantsContradiction) {
+    const tensionPattern = /矛盾|冲突|拉扯|对立|失衡|削弱|修正|阻碍|不一致|逆位/;
+    const tensionCombination = (context?.combinations || []).find((item) =>
+      tensionPattern.test(`${item.title || ''}${item.evidence || ''}${item.meaning || ''}`),
+    ) || context?.combinations?.[0];
+    const combinationCards = (tensionCombination?.cards || [])
+      .map((name) => originalCards.find((card) => card.name === name))
+      .filter((card): card is NonNullable<typeof card> => Boolean(card));
+    const pair = combinationCards.length >= 2
+      ? combinationCards.slice(0,2)
+      : [
+          reversed[0] || originalCards[0],
+          originalCards.find((card) => card !== (reversed[0] || originalCards[0])),
+        ].filter((card): card is NonNullable<typeof card> => Boolean(card));
+    const [first,second] = pair;
+    const label = (card: NonNullable<typeof first>) => `“${card.position || '牌位'}”的${card.name || '未知牌'}·${card.orientation || '方向未知'}`;
+    const firstMeaning = trimText(first?.meaning || first?.keywords,100) || '希望事情继续向前';
+    const secondMeaning = trimText(second?.meaning || second?.keywords,100) || '现实条件仍有阻力';
+    const suppliedEvidence = trimText(`${tensionCombination?.evidence || ''}${tensionCombination?.meaning || ''}`,240);
+    const connectionEvidence = (context?.connections || []).find((item) => tensionPattern.test(item)) || context?.connections?.[0] || '';
+    const blindSpot = originalCards.find((card) => /阻碍|盲点|隐藏|未知|内在|自己|真相/.test(`${card.position || ''}${card.focus || ''}`))
+      || reversed.find((card) => !pair.includes(card))
+      || reversed[0]
+      || second
+      || first;
+    const conflict = first && second
+      ? `${label(first)}指向“${firstMeaning}”，但${label(second)}同时指向“${secondMeaning}”。这两个方向没有完全对齐。`
+      : '当前牌阵只有一张可用牌，证据不足以判断“牌与牌之间”的最大矛盾。';
+    const evidence = suppliedEvidence || trimText(connectionEvidence,240);
+    const blind = blindSpot
+      ? `你最容易忽略的是${label(blindSpot)}：${trimText(blindSpot.focus || blindSpot.meaning || blindSpot.keywords,170) || '它要求你把注意力放回现实里能验证的部分'}。`
+      : '目前没有足够牌面证据确认一个具体盲点。';
+    return `最大的矛盾：${conflict}${evidence ? `\n\n牌面依据：${evidence}` : ''}\n\n${blind}`;
   }
 
   if (wantsLinks && context?.combinations?.length) {
@@ -373,6 +413,7 @@ export async function POST(request: Request) {
   const length = body.length && body.length in LENGTH_PROMPTS ? body.length : 'standard';
   const lengthConfig = LENGTH_PROMPTS[length];
   const naturalFollowUp = isNaturalFollowUp(message);
+  const contradictionRequest = isContradictionRequest(message);
   const responseConfig = naturalFollowUp
     ? { instruction: '这是自然对话追问。先接住用户此刻的话，用80至220个汉字、两三个自然短段落回应。除非确实有帮助，最多引用一张牌；禁止重述整副牌、原问题、牌阵结构或完整结论。', maxTokens: 520 }
     : lengthConfig;
@@ -398,6 +439,7 @@ export async function POST(request: Request) {
     naturalFollowUp ? compactContextText(body.context) : `${agentEvidence(body.context, tools)}\n\n${contextText(body.context)}`,
     STYLE_PROMPTS[style],
     '必须严格围绕提供的牌阵、牌位、正逆位和用户问题回答；若信息不足，请明确说明这是可能性而非事实。',
+    contradictionRequest ? '用户正在要求“矛盾与盲点”分析。第一句必须直接指出最大的矛盾，明确写出至少两张牌及各自牌位；随后单独说明最容易忽略的地方，并给出对应牌面依据。禁止转成情绪安慰、泛泛追问或建议用户继续描述感受。若牌面不足两张，必须明确说证据不足。' : '',
     naturalFollowUp ? '当前是连续对话，不是新一轮解牌。把上一轮牌阵当作背景，不要抢着分析。先回应用户表达的情绪、愿望或犹豫；可以像朋友一样说“我知道”“我听见了”，但不要假装拥有人的经历。' : '',
     '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
     naturalFollowUp ? '' : '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
