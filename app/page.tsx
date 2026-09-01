@@ -410,7 +410,13 @@ type LibraryFilter = 'all' | 'major' | 'wands' | 'cups' | 'swords' | 'pentacles'
 type DiaryNotes = {
   initial?: string;
   outcome?: string;
+  review7?: string;
+  review30?: string;
+  accurate?: string;
+  missed?: string;
   reflection?: string;
+  correction?: string;
+  correctionAt?: number;
   updatedAt?: number;
 };
 type SavedReading = {
@@ -450,6 +456,7 @@ type ChatMessage = {
   tools?: string[];
   mode?: AgentMode;
   evidence?: string[];
+  combinations?: Array<Pick<CombinationInsight, 'title' | 'cards' | 'positions' | 'evidence' | 'meaning'>>;
 };
 type SavedChat = { style: ChatStyle; length?: ReplyLength; messages: ChatMessage[]; updatedAt: number };
 type AgentMemory = { enabled: boolean; note: string; updatedAt?: number };
@@ -515,8 +522,8 @@ const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string
   direct: { name: '直言提醒', note: '坦率指出矛盾、盲点和代价', symbol: '↗' },
 };
 const replyLengths: Record<ReplyLength, { name: string; note: string }> = {
-  brief: { name: '简短', note: '约100～200字' },
-  standard: { name: '标准', note: '约300～500字' },
+  brief: { name: '简短', note: '完整要点 · 约120～220字' },
+  standard: { name: '标准', note: '完整解读 · 约300～600字' },
   deep: { name: '深度', note: '完整牌位与组合分析' },
 };
 const agentToolLabels: Record<string, string> = {
@@ -556,6 +563,29 @@ function parseChoiceQuestion(value: string) {
 function formatDiaryDate(timestamp: number) {
   const date = new Date(timestamp);
   return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function diaryMilestoneDate(timestamp: number, days: number) {
+  const date = new Date(timestamp + days * 86400000);
+  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function firstCompleteSentence(value: string) {
+  const sentence = value.trim().match(/^.+?[。！？!?]/)?.[0];
+  return sentence || value.trim();
+}
+
+function diaryRevisionPrompt(record: SavedReading) {
+  const notes = record.notes || {};
+  return [
+    '请根据这条塔罗日记里后来真实发生的事情，修正当时的解读。不要重新预测，也不要为了证明牌准而硬套。',
+    `7天回看：${notes.review7?.trim() || '未填写'}`,
+    `30天回看：${notes.review30?.trim() || '未填写'}`,
+    `实际发生：${notes.outcome?.trim() || '未填写'}`,
+    `认为准确：${notes.accurate?.trim() || '未填写'}`,
+    `没有发生：${notes.missed?.trim() || '未填写'}`,
+    '请清楚分成四部分：现实验证了什么、哪些判断没有发生、原解读哪里需要降级或改写、现在更贴近事实的理解。最后给一句今后如何核对牌义的方法。',
+  ].join('\n');
 }
 
 function localDateKey(date = new Date()) {
@@ -905,6 +935,7 @@ export default function Home() {
   const [agentMemoryNote, setAgentMemoryNote] = useState('');
   const [agentSourceId, setAgentSourceId] = useState<string | null>(null);
   const [agentJournalEnabled, setAgentJournalEnabled] = useState(false);
+  const [pendingDiaryRevisionId, setPendingDiaryRevisionId] = useState<string | null>(null);
   const [agentLabOpen, setAgentLabOpen] = useState(false);
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
   const [clarifiers, setClarifiers] = useState<ClarifierCard[]>([]);
@@ -1221,6 +1252,17 @@ export default function Home() {
   }, [chatMessages.length]);
 
   useEffect(() => {
+    if (!pendingDiaryRevisionId || view !== 'agent' || activeAgentRecord?.id !== pendingDiaryRevisionId || !drawn.length || isChatStreaming) return;
+    const record = activeAgentRecord;
+    const timer = window.setTimeout(() => {
+      setPendingDiaryRevisionId(null);
+      setAgentJournalEnabled(true);
+      void sendChat(diaryRevisionPrompt(record), { bypassActions: true, saveCorrectionTo: record.id });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [pendingDiaryRevisionId, view, activeAgentRecord?.id, drawnSignature, isChatStreaming]);
+
+  useEffect(() => {
     if (!drawn.length) return;
     const scrollTimer = window.setTimeout(() => {
       const readingStart = interpretationsRef.current;
@@ -1532,6 +1574,23 @@ export default function Home() {
     return [...cardEvidence, ...clarifierEvidence, ...combinationEvidence];
   }
 
+  function visibleCombinationEvidence(answer: string) {
+    if (!agentCombinationInsights.length) return [];
+    const explicitlyMentionsCombination = /组合|共同出现|同时出现|互相|呼应|强化|冲突|修正|×/.test(answer);
+    const matched = agentCombinationInsights.filter((item) => {
+      const names = item.cards.map((label) => label.split('·')[0]).filter(Boolean);
+      return names.length >= 2 && names.slice(0, 2).every((name) => answer.includes(name));
+    });
+    const source = matched.length ? matched : explicitlyMentionsCombination ? agentCombinationInsights : [];
+    return source.slice(0, 3).map((item) => ({
+      title: item.title,
+      cards: item.cards,
+      positions: item.positions,
+      evidence: item.evidence,
+      meaning: item.meaning,
+    }));
+  }
+
   function toggleComparisonReading(id: string) {
     setComparisonIds((current) => {
       if (current.includes(id)) return current.filter((item) => item !== id);
@@ -1734,7 +1793,7 @@ export default function Home() {
     return `只解释已经抽出的澄清牌，不要继续抽牌，也不要建议再抽一张。\n${list}\n\n请明确回答四件事：\n1. 每张牌具体在澄清什么；\n2. 它给出的直接补充是什么；\n3. 它修正或收窄了原牌阵哪一部分；\n4. 原牌阵中哪些核心判断没有改变。\n如果证据不足以改变原结论，请直接说“没有足够依据改变原结论”，不要硬凑。`;
   }
 
-  async function sendChat(prefilled?: string, options?: { retry?: boolean; bypassActions?: boolean }) {
+  async function sendChat(prefilled?: string, options?: { retry?: boolean; bypassActions?: boolean; saveCorrectionTo?: string }) {
     const lastUserIndex = options?.retry ? chatMessages.findLastIndex((item) => item.role === 'user') : -1;
     const retryMessage = lastUserIndex >= 0 ? chatMessages[lastUserIndex].content : '';
     const message = (prefilled ?? (retryMessage || chatInput)).trim();
@@ -1836,11 +1895,16 @@ export default function Home() {
               note: agentMemoryNote.trim(),
               patterns: personalPatterns.text,
             } : { enabled: false },
-            journal: agentJournalEnabled && activeAgentRecord ? {
+            journal: (agentJournalEnabled || Boolean(options?.saveCorrectionTo)) && activeAgentRecord ? {
               date: formatDiaryDate(activeAgentRecord.createdAt),
               initial: activeAgentRecord.notes?.initial || '',
               outcome: activeAgentRecord.notes?.outcome || '',
+              review7: activeAgentRecord.notes?.review7 || '',
+              review30: activeAgentRecord.notes?.review30 || '',
+              accurate: activeAgentRecord.notes?.accurate || '',
+              missed: activeAgentRecord.notes?.missed || '',
               reflection: activeAgentRecord.notes?.reflection || '',
+              correction: activeAgentRecord.notes?.correction || '',
             } : null,
             comparisons: comparisonRecords.map((record) => ({
               date: formatDiaryDate(record.createdAt),
@@ -1902,13 +1966,18 @@ export default function Home() {
         : assistantText;
       const finalMode: AgentMode = usedLocalFallback ? 'local' : 'model';
       const answerEvidence = currentAnswerEvidence();
+      const combinationEvidence = visibleCombinationEvidence(displayText);
       setAgentMode(finalMode);
       const completed = [
         ...baseMessages,
-        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode, evidence: answerEvidence },
+        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode, evidence: answerEvidence, combinations: combinationEvidence },
       ];
       setChatMessages(completed);
       saveChat(completed);
+      if (options?.saveCorrectionTo) {
+        updateDiaryNote(options.saveCorrectionTo, 'correction', displayText);
+        showNotice('智能体已根据现实记录修正当时的解读');
+      }
     } catch (error) {
       if (abortController.signal.aborted) {
         const partial = assistantText.trim();
@@ -2052,7 +2121,7 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  function loadAgentReading(record: SavedReading) {
+  function loadAgentReading(record: SavedReading, options?: { enableJournal?: boolean }) {
     const restored = record.cards.map((entry) => {
       const card = cards.find((item) => item.id === entry.id);
       return card ? withOrientation(card, entry.reversed) : null;
@@ -2066,11 +2135,27 @@ export default function Home() {
     setDrawn(restored);
     setClarifiers(restoreClarifierCards(record));
     setAgentSourceId(record.id);
-    setAgentJournalEnabled(false);
+    setAgentJournalEnabled(Boolean(options?.enableJournal));
     setGuidedPlan(null);
     setIsSharedReading(false);
     setView('agent');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function startDiaryRevision(record: SavedReading) {
+    const notes = record.notes;
+    const hasFacts = Boolean(notes?.outcome?.trim() || notes?.review7?.trim() || notes?.review30?.trim() || notes?.accurate?.trim() || notes?.missed?.trim());
+    if (!hasFacts) {
+      setOpenDiaryId(record.id);
+      showNotice('先写下实际发生的事情，再让智能体修正解读');
+      return;
+    }
+    if (chatRemaining <= 0) {
+      showNotice('今天的智能体对话次数已经用完，明天再来复盘');
+      return;
+    }
+    setPendingDiaryRevisionId(record.id);
+    loadAgentReading(record, { enableJournal: true });
   }
 
   async function copyChatTranscript() {
@@ -2127,11 +2212,11 @@ export default function Home() {
     setComparisonIds((current) => current.filter((item) => item !== id));
   }
 
-  function updateDiaryNote(id: string, field: 'initial' | 'outcome' | 'reflection', value: string) {
+  function updateDiaryNote(id: string, field: 'initial' | 'outcome' | 'review7' | 'review30' | 'accurate' | 'missed' | 'reflection' | 'correction', value: string) {
     setHistory((current) => {
       const next = current.map((item) => item.id === id ? {
         ...item,
-        notes: { ...item.notes, [field]: value, updatedAt: Date.now() },
+        notes: { ...item.notes, [field]: value, ...(field === 'correction' ? { correctionAt: Date.now() } : {}), updatedAt: Date.now() },
       } : item);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
       return next;
@@ -2141,7 +2226,7 @@ export default function Home() {
       setDailyEntries((current) => {
         const next = current.map((entry) => entry.date === date ? {
           ...entry,
-          notes: { ...entry.notes, [field]: value, updatedAt: Date.now() },
+          notes: { ...entry.notes, [field]: value, ...(field === 'correction' ? { correctionAt: Date.now() } : {}), updatedAt: Date.now() },
         } : entry);
         localStorage.setItem(DAILY_TAROT_KEY, JSON.stringify(next));
         return next;
@@ -3286,7 +3371,7 @@ export default function Home() {
               const definition = spreadDefinitions[record.spread];
               const previewCards = record.cards.slice(0,5).map((entry) => cards.find((card) => card.id === entry.id)).filter(Boolean) as TarotCard[];
               const ageDays = Math.max(0, Math.floor((Date.now() - record.createdAt) / 86400000));
-              const noteCount = [record.notes?.initial, record.notes?.outcome, record.notes?.reflection].filter((note) => note?.trim()).length;
+              const noteCount = [record.notes?.initial, record.notes?.outcome, record.notes?.review7, record.notes?.review30, record.notes?.accurate, record.notes?.missed, record.notes?.reflection].filter((note) => note?.trim()).length;
               const isOpen = openDiaryId === record.id;
               const isDailyRecord = record.kind === 'daily';
               return <article key={record.id} className={`history-item diary-entry ${isOpen ? 'open' : ''}`}>
@@ -3296,7 +3381,7 @@ export default function Home() {
                     <span>{formatDiaryDate(record.createdAt)}</span>
                     <h2>{isDailyRecord ? '每日塔罗' : definition.name}</h2>
                     <p className="diary-question">{record.question || '这次没有写下问题'}</p>
-                    <div className="diary-meta"><small>{isDailyRecord ? '今日单牌' : `${record.cards.length} 张牌`}</small>{record.dailyMood && <small>状态 · {record.dailyMood}</small>}<small>{noteCount ? `已写 ${noteCount}/3 段笔记` : '等待写下感受'}</small>{ageDays > 0 && <small>距今 {ageDays} 天</small>}</div>
+                    <div className="diary-meta"><small>{isDailyRecord ? '今日单牌' : `${record.cards.length} 张牌`}</small>{record.dailyMood && <small>状态 · {record.dailyMood}</small>}<small>{noteCount ? `已完成 ${noteCount}/7 项复盘` : '等待写下感受'}</small>{ageDays > 0 && <small>距今 {ageDays} 天</small>}{ageDays >= 30 ? <small className="review-due">30天复盘已开启</small> : ageDays >= 7 ? <small className="review-due">7天回看已开启</small> : <small>7天后开启回看</small>}</div>
                   </div>
                   <div className="history-actions">
                     <Button onClick={() => restoreReading(record)}>打开完整解读</Button>
@@ -3306,7 +3391,12 @@ export default function Home() {
                 </div>
 
                 {isOpen && <div className="diary-details">
-                  {ageDays >= 30 && !record.notes?.reflection?.trim() && <div className="diary-return-prompt"><span>☾</span><div><b>这次占卜已经过去 {ageDays} 天</b><p>当时看不清的部分，现在也许已经有了答案。要回来看看吗？</p></div></div>}
+                  {ageDays >= 7 && !(ageDays >= 30 ? record.notes?.review30?.trim() : record.notes?.review7?.trim()) && <div className="diary-return-prompt"><span>☾</span><div><b>{ageDays >= 30 ? '30天复盘已经开启' : '7天回看已经开启'}</b><p>先写事实，再核对哪些牌义发生了、哪些没有发生。</p></div></div>}
+                  <div className="diary-review-timeline" aria-label="塔罗日记复盘时间线">
+                    <div className="done"><i>✓</i><span><b>保存当天</b><small>{diaryMilestoneDate(record.createdAt,0)} · 留下问题与牌面</small></span></div>
+                    <div className={`${ageDays >= 7 ? 'due' : 'waiting'} ${record.notes?.review7?.trim() ? 'done' : ''}`}><i>{record.notes?.review7?.trim() ? '✓' : '07'}</i><span><b>7天后回看</b><small>{ageDays >= 7 ? (record.notes?.review7?.trim() ? '已完成第一次现实核对' : '现在可以填写') : `${diaryMilestoneDate(record.createdAt,7)} 开启`}</small></span></div>
+                    <div className={`${ageDays >= 30 ? 'due' : 'waiting'} ${record.notes?.review30?.trim() ? 'done' : ''}`}><i>{record.notes?.review30?.trim() ? '✓' : '30'}</i><span><b>30天后复盘</b><small>{ageDays >= 30 ? (record.notes?.review30?.trim() ? '已完成阶段性复盘' : '现在可以填写') : `${diaryMilestoneDate(record.createdAt,30)} 开启`}</small></span></div>
+                  </div>
                   <div className="diary-spread-review">
                     <div className="diary-subheading"><span>01</span><div><b>当时抽到的牌</b><small>{isDailyRecord ? '这一天的核心提醒' : `按「${definition.name}」的位置顺序`}</small></div></div>
                     <ol>{record.cards.map((entry, index) => {
@@ -3319,9 +3409,18 @@ export default function Home() {
                     <div className="diary-subheading"><span>02</span><div><b>把时间留下来</b><small>不必一次写完，内容会自动保存在这台设备</small></div></div>
                     <div className="diary-note-grid">
                       <label><span>当时的想法</span><small>刚看到牌面时，你最直接的感受是什么？</small><Textarea value={record.notes?.initial || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'initial',event.target.value)} placeholder="例如：我其实已经隐约知道答案，只是不愿意承认……" /></label>
-                      <label><span>后续发生了什么</span><small>事实如何发展？哪些部分与牌面产生了呼应？</small><Textarea value={record.notes?.outcome || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'outcome',event.target.value)} placeholder="例如：两周后我们进行了一次坦白的谈话……" /></label>
-                      <label><span>现在回看</span><small>今天的你，会怎样理解当时的自己和这组牌？</small><Textarea value={record.notes?.reflection || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'reflection',event.target.value)} placeholder="例如：真正重要的并不是预测结果，而是我终于开始……" /></label>
+                      <label className={ageDays < 7 ? 'locked' : ''}><span>7天后回看</span><small>{ageDays >= 7 ? '第一周出现了哪些现实信号？' : `还有 ${7 - ageDays} 天开启`}</small><Textarea disabled={ageDays < 7} value={record.notes?.review7 || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'review7',event.target.value)} placeholder="记录第一周真正发生的变化……" /></label>
+                      <label className={ageDays < 30 ? 'locked' : ''}><span>30天后回看</span><small>{ageDays >= 30 ? '一个阶段过去后，趋势最终怎样落地？' : `还有 ${30 - ageDays} 天开启`}</small><Textarea disabled={ageDays < 30} value={record.notes?.review30 || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'review30',event.target.value)} placeholder="记录一个月后的实际结果……" /></label>
+                      <label><span>实际发生了什么</span><small>只写可以确认的事实，先不解释牌义。</small><Textarea value={record.notes?.outcome || ''} maxLength={1000} onChange={(event) => updateDiaryNote(record.id,'outcome',event.target.value)} placeholder="例如：两周后我们进行了一次坦白的谈话……" /></label>
+                      <label><span>哪部分准确</span><small>哪些判断得到了现实行为或结果的验证？</small><Textarea value={record.notes?.accurate || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'accurate',event.target.value)} placeholder="例如：对方确实保持联系，但推进速度很慢……" /></label>
+                      <label><span>哪部分没有发生</span><small>没有出现的情节、被夸大的判断也值得记录。</small><Textarea value={record.notes?.missed || ''} maxLength={800} onChange={(event) => updateDiaryNote(record.id,'missed',event.target.value)} placeholder="例如：并没有出现解读里担心的突然断联……" /></label>
+                      <label className="diary-reflection-wide"><span>现在回看</span><small>今天的你，会怎样理解当时的自己和这组牌？</small><Textarea value={record.notes?.reflection || ''} maxLength={1000} onChange={(event) => updateDiaryNote(record.id,'reflection',event.target.value)} placeholder="例如：真正重要的并不是预测结果，而是我终于开始……" /></label>
                     </div>
+                    <div className="diary-ai-revision">
+                      <div><span>AI 事实校准</span><b>让智能体根据后来发生的事，修正当时的解读</b><small>它会区分现实验证、没有发生与原先过度推断，不会为了证明牌准而硬套。</small></div>
+                      <Button onClick={() => startDiaryRevision(record)} disabled={pendingDiaryRevisionId === record.id || isChatStreaming || chatRemaining <= 0}>{pendingDiaryRevisionId === record.id ? '正在准备复盘…' : record.notes?.correction?.trim() ? '重新校准' : '交给智能体修正'}<ChevronRight /></Button>
+                    </div>
+                    {record.notes?.correction?.trim() && <details className="diary-ai-result" open><summary><span>智能体修正后的解读</span><small>{record.notes.correctionAt ? formatDiaryDate(record.notes.correctionAt) : '已保存'}</small><ChevronRight /></summary><p>{record.notes.correction}</p></details>}
                     {record.notes?.updatedAt && <p className="diary-saved-status">最后整理于 {formatDiaryDate(record.notes.updatedAt)}</p>}
                   </div>
                 </div>}
@@ -3432,8 +3531,8 @@ export default function Home() {
                       <div className="agent-capability-title"><span>日记复盘</span><button type="button" role="switch" aria-checked={agentJournalEnabled} className={agentJournalEnabled ? 'active' : ''} disabled={!activeAgentRecord} onClick={() => setAgentJournalEnabled((current) => !current)}><i />{agentJournalEnabled ? '允许读取' : '不读取'}</button></div>
                       {activeAgentRecord ? <>
                         <p>将这次牌面和后来真正发生的事情分开核对，减少事后硬套牌义。</p>
-                        <div className="agent-journal-status"><span className={activeAgentRecord.notes?.initial?.trim() ? 'done' : ''}>当时想法</span><span className={activeAgentRecord.notes?.outcome?.trim() ? 'done' : ''}>后续发生</span><span className={activeAgentRecord.notes?.reflection?.trim() ? 'done' : ''}>现在回看</span></div>
-                        <button type="button" className="agent-capability-action" disabled={!agentJournalEnabled || isChatStreaming || chatRemaining <= 0} onClick={() => void sendChat('请结合我的日记做一次复盘：哪些牌义得到了现实验证，哪些没有发生，我当时可能忽略了什么？')}>开始日记复盘<ChevronRight /></button>
+                        <div className="agent-journal-status"><span className={activeAgentRecord.notes?.outcome?.trim() ? 'done' : ''}>实际发生</span><span className={activeAgentRecord.notes?.accurate?.trim() ? 'done' : ''}>准确部分</span><span className={activeAgentRecord.notes?.missed?.trim() ? 'done' : ''}>未发生</span><span className={activeAgentRecord.notes?.review7?.trim() ? 'done' : ''}>7天回看</span><span className={activeAgentRecord.notes?.review30?.trim() ? 'done' : ''}>30天复盘</span><span className={activeAgentRecord.notes?.correction?.trim() ? 'done' : ''}>事实校准</span></div>
+                        <button type="button" className="agent-capability-action" disabled={!agentJournalEnabled || isChatStreaming || chatRemaining <= 0} onClick={() => void sendChat(diaryRevisionPrompt(activeAgentRecord), { bypassActions: true, saveCorrectionTo: activeAgentRecord.id })}>根据事实修正解读<ChevronRight /></button>
                       </> : <div className="agent-capability-empty"><p>当前牌阵还没有连接到日记记录。</p><button type="button" onClick={() => history[0] && loadAgentReading(history[0])} disabled={!history.length}>选择最近日记</button></div>}
                     </article>
 
@@ -3470,7 +3569,18 @@ export default function Home() {
                   {renderAgentOperationPanels()}
 
                   <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
-                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}><span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span><p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>{message.role === 'assistant' && message.content && <details className="ai-message-evidence"><summary>查看回答依据 <ChevronRight /></summary><div><span>{message.mode === 'local' ? '本地韦特牌义' : 'AI 模型协作'} · {(message.tools?.length ? message.tools : agentTools).join(' · ')}</span>{message.evidence?.length ? <ul>{message.evidence.map((item,index) => <li key={`${message.id}-evidence-${index}`}>{item}</li>)}</ul> : <p>本次回答依据当前「{spreadInfo.name}」的 {drawn.length} 张牌、牌位与正逆位生成。</p>}<small>这里展示的是智能体实际读取的牌库证据；它用于说明解读路径，不是对现实事实的证明。</small></div></details>}</article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
+                    {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}>
+                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}` : '你'}</span>
+                      <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
+                      {message.role === 'assistant' && Boolean(message.combinations?.length) && <section className="ai-combination-evidence" aria-label="组合牌义依据">
+                        <div className="ai-combination-heading"><Sparkles /><span>这段判断用到了 {message.combinations?.length} 组组合依据</span></div>
+                        {message.combinations?.map((item,index) => <details key={`${message.id}-combination-${index}`}>
+                          <summary><span><b>{item.cards.join(' × ')}</b><small>{item.positions.join(' × ')}</small></span><ChevronRight /></summary>
+                          <div><strong>{firstCompleteSentence(item.meaning)}</strong><p>{item.evidence}</p><small>{item.meaning}</small></div>
+                        </details>)}
+                      </section>}
+                      {message.role === 'assistant' && message.content && <details className="ai-message-evidence"><summary>查看全部回答依据 <ChevronRight /></summary><div><span>{message.mode === 'local' ? '本地韦特牌义' : 'AI 模型协作'} · {(message.tools?.length ? message.tools : agentTools).join(' · ')}</span>{message.evidence?.length ? <ul>{message.evidence.map((item,index) => <li key={`${message.id}-evidence-${index}`}>{item}</li>)}</ul> : <p>本次回答依据当前「{spreadInfo.name}」的 {drawn.length} 张牌、牌位与正逆位生成。</p>}<small>这里展示的是智能体实际读取的牌库证据；它用于说明解读路径，不是对现实事实的证明。</small></div></details>}
+                    </article>) : <div className="ai-chat-welcome"><span>✦</span><p>我已经读到了这组牌。你可以点上面的分析模式，也可以直接说你现在最纠结的部分。</p></div>}
                     <div ref={chatEndRef} />
                   </div>
 

@@ -32,7 +32,7 @@ type TarotContext = {
   actions?: { doNow?: string; avoid?: string; watch?: string } | null;
   energy?: string;
   memory?: { enabled?: boolean; note?: string; patterns?: string } | null;
-  journal?: { date?: string; initial?: string; outcome?: string; reflection?: string } | null;
+  journal?: { date?: string; initial?: string; outcome?: string; review7?: string; review30?: string; accurate?: string; missed?: string; reflection?: string; correction?: string } | null;
   comparisons?: Array<{
     date?: string;
     question?: string;
@@ -60,8 +60,8 @@ const STYLE_PROMPTS = {
 } as const;
 
 const LENGTH_PROMPTS = {
-  brief: { instruction: '用100至200个汉字回答，只讲最关键的一张牌或一组关系，最多两个短段落。', maxTokens: 500 },
-  standard: { instruction: '用300至500个汉字回答，讲清核心判断、主要牌位联系和一个现实建议，保持自然对话感。', maxTokens: 1100 },
+  brief: { instruction: '用120至220个汉字完成回答。篇幅短，但必须包含直接答案、最关键的一条牌面依据和一句完整收尾；宁可少讲一个点，也不准在句子或推论中途结束。最多两个短段落。', maxTokens: 700 },
+  standard: { instruction: '用300至600个汉字完成回答。必须讲清核心判断、主要牌位联系和一个现实建议，并让最后一个推论自然收束；不要为了卡字数截断句子。', maxTokens: 1400 },
   deep: { instruction: '进行完整深度解读，通常700至1200个汉字。覆盖各牌位、关键组合、元素与正逆位结构、主线转折和行动建议；可以使用短标题，但不要堆砌套话。', maxTokens: 2400 },
 } as const;
 
@@ -133,7 +133,7 @@ function contextText(context: TarotContext | undefined) {
     context?.actions ? `行动建议：适合做——${context.actions.doNow?.slice(0, 700) || '无'}；暂时避免——${context.actions.avoid?.slice(0, 700) || '无'}；接下来观察——${context.actions.watch?.slice(0, 700) || '无'}` : '',
     context?.energy ? `能量结构：${context.energy.slice(0, 900)}` : '',
     context?.memory?.enabled && (context.memory.note || context.memory.patterns) ? `用户主动开启的长期记忆：${context.memory.note?.slice(0, 1200) || '无补充背景'}；历史模式：${context.memory.patterns?.slice(0, 800) || '暂无足够记录'}` : '',
-    context?.journal ? `本条塔罗日记：日期 ${context.journal.date || '未知'}；当时想法：${context.journal.initial?.slice(0, 700) || '未记录'}；后续发生：${context.journal.outcome?.slice(0, 700) || '未记录'}；现在回看：${context.journal.reflection?.slice(0, 700) || '未记录'}` : '',
+    context?.journal ? `本条塔罗日记：日期 ${context.journal.date || '未知'}；当时想法：${context.journal.initial?.slice(0, 700) || '未记录'}；7天回看：${context.journal.review7?.slice(0, 700) || '未记录'}；30天回看：${context.journal.review30?.slice(0, 700) || '未记录'}；实际发生：${context.journal.outcome?.slice(0, 900) || '未记录'}；认为准确：${context.journal.accurate?.slice(0, 700) || '未记录'}；没有发生：${context.journal.missed?.slice(0, 700) || '未记录'}；现在回看：${context.journal.reflection?.slice(0, 700) || '未记录'}；上次事实校准：${context.journal.correction?.slice(0, 900) || '暂无'}` : '',
     Array.isArray(context?.comparisons) && context.comparisons.length > 1 ? `对比记录：\n${context.comparisons.slice(0, 3).map((item, index) => `${index + 1}. ${item.date || '未知日期'}｜${item.spread || '未知牌阵'}｜${item.question || '未写问题'}｜${item.cards?.join('、') || '无牌面'}｜回看：${item.reflection || '未记录'}`).join('\n')}` : '',
   ].filter(Boolean).join('\n\n');
 }
@@ -162,7 +162,7 @@ function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) 
     tools.includes('combinations') && context?.combinations?.length ? `[工具·组合牌义知识库] ${context.combinations.slice(0, 6).map((item) => `${item.title || '组合'}：${item.evidence || ''}${item.meaning || ''}`).join('；')}` : '',
     tools.includes('actions') && context?.actions ? `[工具·行动建议] 适合：${context.actions.doNow || '暂无'}；避免：${context.actions.avoid || '暂无'}；观察：${context.actions.watch || '暂无'}` : '',
     tools.includes('memory') ? `[工具·长期记忆] ${context?.memory?.enabled ? `${context.memory.note || '无用户补充背景'}；${context.memory.patterns || '暂无历史模式'}` : '已读取本次牌阵最近的对话内容。'}` : '',
-    tools.includes('journal') && context?.journal ? `[工具·日记复盘] 当时想法：${context.journal.initial || '未记录'}；后续发生：${context.journal.outcome || '未记录'}；现在回看：${context.journal.reflection || '未记录'}` : '',
+    tools.includes('journal') && context?.journal ? `[工具·日记复盘] 7天回看：${context.journal.review7 || '未记录'}；30天回看：${context.journal.review30 || '未记录'}；实际发生：${context.journal.outcome || '未记录'}；准确部分：${context.journal.accurate || '未记录'}；没有发生：${context.journal.missed || '未记录'}；现在回看：${context.journal.reflection || '未记录'}` : '',
     tools.includes('compare') && context?.comparisons?.length ? `[工具·牌阵对比] ${context.comparisons.slice(0, 3).map((item) => `${item.date || '未知日期'}的${item.spread || '牌阵'}：${item.cards?.join('、') || '无牌面'}`).join('；')}` : '',
   ].filter(Boolean);
   return evidence.join('\n');
@@ -171,6 +171,17 @@ function agentEvidence(context: TarotContext | undefined, tools: AgentToolId[]) 
 function trimText(value: unknown, maxLength: number) {
   const text = typeof value === 'string' ? value.trim() : '';
   return text.length > maxLength ? `${text.slice(0, maxLength).replace(/[，；、\s]+$/,'')}……` : text;
+}
+
+function fitCompleteText(value: string, maxLength: number) {
+  const text = value.trim();
+  if (!text) return '';
+  if (text.length <= maxLength) return /[。！？!?…」』”’）)]$/.test(text) ? text : `${text}。`;
+  const window = text.slice(0, maxLength);
+  const endings = [...window.matchAll(/[。！？!?]/g)];
+  const lastEnding = endings.at(-1)?.index ?? -1;
+  if (lastEnding >= Math.floor(maxLength * .52)) return window.slice(0, lastEnding + 1);
+  return `${window.replace(/[，；、：\s]+$/,'')}。`;
 }
 
 function localAgentBase(message: string, context: TarotContext | undefined) {
@@ -201,7 +212,10 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
     return `${lead}\n\n这 ${records.length} 次记录分别出现了：${records.map((item) => `${item.date || '某次'}的${item.cards?.join('、') || '未记录牌面'}`).join('；')}。先看重复牌、正逆位变化和结果牌方向，再把它们与真实发生的事情核对；重复出现不等于命运注定，更可能表示同一课题还在被处理。`;
   }
   if (wantsJournal && context?.journal) {
-    return `${lead}\n\n你当时写下的是“${trimText(context.journal.initial, 110) || '还没有记录第一感受'}”，后来发生的是“${trimText(context.journal.outcome, 120) || '还没有补写后续'}”。把牌面和事实分开看：已经发生的部分可以验证理解，没发生的部分不必硬套进牌义。`;
+    const verified = trimText(context.journal.accurate, 160) || '目前没有足够事实确认某一部分准确';
+    const missed = trimText(context.journal.missed, 160) || '尚未记录明确没有发生的部分';
+    const outcome = trimText(context.journal.outcome || context.journal.review30 || context.journal.review7, 200) || '还没有补写可确认的后续事实';
+    return `现实验证：${outcome}\n\n得到验证：${verified}\n没有发生：${missed}\n\n需要修正：旧解读只能保留与上述事实直接对应的部分；其余判断应降级为当时的可能性，不能事后硬套。现在更贴近事实的理解是，先依据已经发生的行为调整判断，再把牌义当作复盘线索，而不是结果证明。`;
   }
 
   if (wantsLinks && context?.combinations?.length) {
@@ -223,10 +237,10 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
 
 function localAgentText(message: string, context: TarotContext | undefined, length: keyof typeof LENGTH_PROMPTS = 'standard') {
   const base = localAgentBase(message, context);
-  if (length === 'brief') return trimText(base, 190);
+  if (length === 'brief') return fitCompleteText(base, 220);
   if (length === 'standard') {
     const action = context?.actions?.doNow ? `\n\n更实际一点，现在可以先做：${trimText(context.actions.doNow, 130)}` : '';
-    return `${base}${base.length < 260 ? action : ''}`;
+    return fitCompleteText(`${base}${base.length < 320 ? action : ''}`, 620);
   }
   const cards = Array.isArray(context?.cards) ? context.cards : [];
   const cardSection = cards.map((card, index) => `${index + 1}. ${card.position || '牌位'}的${card.name || '未知牌'}·${card.orientation || '方向未知'}：${trimText(card.meaning || card.keywords, 150)}`).join('\n');
@@ -349,6 +363,7 @@ export async function POST(request: Request) {
     '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
     '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',
     '“组合牌义知识库”提供经典双牌、同花色、重复数字、宫廷牌和起点到结果的结构证据。它用于修正单张牌义；引用时要说清是哪两张牌、落在哪些位置以及正逆位如何改变组合，不要把组合解释成固定预言。',
+    '当用户要求根据日记事实修正旧解读时，事实优先于牌义。必须区分已经验证、没有发生、无法确认和原先过度推断；不得为了证明塔罗准确而重新包装没有发生的内容。',
     agentEvidence(body.context, tools),
     contextText(body.context),
   ].join('\n\n');

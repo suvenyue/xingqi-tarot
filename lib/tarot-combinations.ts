@@ -12,6 +12,7 @@ export type CombinationInsight = {
   kind: 'classic-pair' | 'same-suit' | 'repeated-rank' | 'court' | 'start-result' | 'position';
   title: string;
   cards: string[];
+  positions: string[];
   evidence: string;
   meaning: string;
 };
@@ -69,6 +70,7 @@ export function buildCombinationInsights(cards: CombinationCard[], positions: st
         kind: 'classic-pair',
         title: `${first.name} × ${second.name}`,
         cards: [cardLabel(first), cardLabel(second)],
+        positions: [positions[firstIndex] || `牌位${firstIndex + 1}`, positions[secondIndex] || `牌位${secondIndex + 1}`],
         evidence: `${first.name}位于“${positions[firstIndex] || `牌位${firstIndex + 1}`}”，${second.name}位于“${positions[secondIndex] || `牌位${secondIndex + 1}`}”。`,
         meaning: `${classic}${positionModifier(positions[firstIndex] || '', positions[secondIndex] || '')}${first.reversed || second.reversed ? '其中至少一张逆位，说明这股组合能量目前更可能表现为延迟、内耗或尚未说出口。' : ''}`,
       });
@@ -88,6 +90,7 @@ export function buildCombinationInsights(cards: CombinationCard[], positions: st
       kind: 'same-suit',
       title: `${grouped[0].suitLabel || '同花色'}${continuous ? '连续出现' : '集中出现'}`,
       cards: grouped.map(cardLabel),
+      positions: indices.map((index) => positions[index] || `牌位${index + 1}`),
       evidence: `${grouped.length}张${grouped[0].suitLabel || '同花色牌'}分布在${indices.map((index) => `“${positions[index] || `牌位${index + 1}`}”`).join('、')}。`,
       meaning: `${suitMeaning[suit] || '同一花色重复出现，说明这类现实课题不是偶然插曲，而是整组牌需要持续处理的主线。'}${continuous ? '相邻牌位连续出现，让这种影响更直接地连接前后两个阶段。' : '它们分布在不同牌位，说明同一课题从多个角度反复介入。'}`,
     });
@@ -104,6 +107,7 @@ export function buildCombinationInsights(cards: CombinationCard[], positions: st
       kind: 'repeated-rank',
       title: `重复数字／阶位：${rank} × ${indices.length}`,
       cards: indices.map((index) => cardLabel(cards[index])),
+      positions: indices.map((index) => positions[index] || `牌位${index + 1}`),
       evidence: `“${rank}”在${indices.map((index) => positions[index] || `牌位${index + 1}`).join('、')}重复出现。`,
       meaning: ['侍从', '骑士', '王后', '国王'].includes(rank)
         ? '同一宫廷阶位重复，说明不同领域正在用相似的成熟度、角色或应对方式彼此呼应。'
@@ -117,6 +121,7 @@ export function buildCombinationInsights(cards: CombinationCard[], positions: st
       kind: 'court',
       title: '宫廷牌角色关系',
       cards: courts.map(({ card }) => cardLabel(card)),
+      positions: courts.map(({ index }) => positions[index] || `牌位${index + 1}`),
       evidence: `${courts.map(({ card, index }) => `${positions[index] || `牌位${index + 1}`}出现${card.rank}`).join('；')}。`,
       meaning: '宫廷牌较多时，事件不仅由抽象能量推动，也与具体人物、沟通角色和成熟度有关。侍从偏学习，骑士偏行动，王后偏内在掌握，国王偏外在决策。',
     });
@@ -132,6 +137,7 @@ export function buildCombinationInsights(cards: CombinationCard[], positions: st
       kind: 'start-result',
       title: '起点 → 结果',
       cards: [cardLabel(first), cardLabel(last)],
+      positions: [positions[0] || '起点', positions[cards.length - 1] || '结果'],
       evidence: `${positions[0] || '起点'}由${cardLabel(first)}开启，${positions[cards.length - 1] || '结果'}落在${cardLabel(last)}。`,
       meaning: orientationShift,
     });
