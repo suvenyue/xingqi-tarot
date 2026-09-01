@@ -982,6 +982,7 @@ export default function Home() {
   const [guidedPlan, setGuidedPlan] = useState<GuidedPlan | null>(null);
   const [isPlanningReading, setIsPlanningReading] = useState(false);
   const [guidedPlanError, setGuidedPlanError] = useState('');
+  const [guidedSpreadPickerOpen, setGuidedSpreadPickerOpen] = useState(false);
   const [memorySuggestionDismissed, setMemorySuggestionDismissed] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('checking');
   const [cloudDisplayName, setCloudDisplayName] = useState('');
@@ -1563,6 +1564,8 @@ export default function Home() {
     }
     setIsPlanningReading(true);
     setGuidedPlanError('');
+    setGuidedPlan(null);
+    setGuidedSpreadPickerOpen(false);
     try {
       const response = await fetch('/api/tarot-plan', {
         method: 'POST',
@@ -3536,46 +3539,56 @@ export default function Home() {
       )}
 
       {view === 'agent' && (
-        <section className="agent-shell" id="agent">
+        <section className={`agent-shell ${drawn.length ? 'agent-connected' : 'agent-gateway'}`} id="agent">
           <div className="agent-page-heading">
             <div>
               <p className="eyebrow"><span /> XINGQI TAROT AGENT · V4</p>
               <h1>星契塔罗智能体</h1>
               <p>先帮你把困扰整理成可解读的问题，再推荐牌阵、读取组合证据，并把对话接回塔罗日记。</p>
             </div>
-            <div className="agent-page-stat"><span>今日可对话</span><b>{chatRemaining}</b><small>／{DAILY_CHAT_LIMIT} 次</small><em className={`cloud-${cloudSyncStatus}`}>{cloudSyncStatus === 'ready' ? `云端已同步${cloudDisplayName ? ` · ${cloudDisplayName}` : ''}` : cloudSyncStatus === 'syncing' ? '正在同步云端' : cloudSyncStatus === 'checking' ? '正在检查登录' : cloudSyncStatus === 'error' ? '云端暂不可用' : '当前为本地保存'}</em></div>
+            <div className="agent-page-stat" style={{ '--quota-progress': `${Math.max(0, Math.min(360, chatRemaining / DAILY_CHAT_LIMIT * 270))}deg` } as CSSProperties}><i aria-hidden="true" /><span>今日剩余</span><b>{chatRemaining}</b><small>／{DAILY_CHAT_LIMIT} 次</small><em className={`cloud-${cloudSyncStatus}`}>{cloudSyncStatus === 'ready' ? `已同步${cloudDisplayName ? ` · ${cloudDisplayName}` : ''}` : cloudSyncStatus === 'syncing' ? '同步中…' : cloudSyncStatus === 'checking' ? '检查登录中' : cloudSyncStatus === 'error' ? '云端暂不可用' : '保存在本机'}</em></div>
+            <div className="agent-hero-astrolabe" aria-hidden="true"><i /><i /><span>✦</span></div>
           </div>
 
           {!drawn.length ? (
             <div className="agent-empty-state">
+              <div className="agent-gateway-frame" aria-hidden="true"><i /><i /><span>☾</span></div>
               <div className="agent-guided-intro">
-                <div className="agent-empty-orbit" aria-hidden="true"><Bot /><i /><i /></div>
-                <div><span>ACTIVE READING · 主动占卜</span><h2>不用先想好该怎么问</h2><p>把最近真正困扰你的事情说出来。智能体会先帮你整理问题、推荐牌阵并解释原因，再带你进入抽牌。</p></div>
+                <div className="agent-empty-orbit" aria-hidden="true"><span>✦</span><i /><i /></div>
+                <div><span>ORACLE GATEWAY · 星契启问台</span><h2>不用先想好该怎么问</h2><p>把最近真正困扰你的事情告诉我。<br />我会先帮你理清问题，再推荐适合的牌阵。</p></div>
               </div>
 
-              <div className="agent-guided-planner">
-                <label htmlFor="guided-concern">最近哪件事一直在你心里打转？</label>
-                <Textarea id="guided-concern" value={guidedConcern} onChange={(event) => { setGuidedConcern(event.target.value.slice(0, 800)); setGuidedPlanError(''); }} placeholder="不用组织成塔罗问题，像平时说话一样描述就可以。例如：我想换工作，但担心收入不稳定，也不知道现在离开是不是冲动……" disabled={isPlanningReading} />
-                <div className="agent-guided-submit"><small>{guidedConcern.length}／800 · 这里不会自动写入长期记忆</small><Button onClick={() => void planGuidedReading()} disabled={isPlanningReading || guidedConcern.trim().length < 4}><Sparkles />{isPlanningReading ? '正在整理…' : '帮我整理问题'}</Button></div>
+              {!guidedPlan ? <div className="agent-guided-planner">
+                <label htmlFor="guided-concern"><span>☾</span> 最近哪件事一直在你心里打转？</label>
+                <div className="agent-concern-paper">
+                  <Textarea id="guided-concern" value={guidedConcern} onChange={(event) => { setGuidedConcern(event.target.value.slice(0, 800)); setGuidedPlanError(''); }} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && guidedConcern.trim().length >= 4 && !isPlanningReading) { event.preventDefault(); void planGuidedReading(); } }} placeholder="比如：最近很想换工作，但担心收入不稳定，也不知道现在离开是不是合适……" disabled={isPlanningReading} />
+                  <span className="agent-concern-star" aria-hidden="true">✦</span><span className="agent-concern-moon" aria-hidden="true">☾</span>
+                </div>
+                {isPlanningReading && <div className="agent-understanding-path" aria-live="polite"><span className="active"><i />理解你的描述</span><span className="active"><i />提取真正想确认的问题</span><span><i />匹配合适牌阵</span></div>}
+                <div className="agent-guided-submit"><small>⌁ {guidedConcern.length}／800 · 本段内容不会自动写入长期记忆 <kbd>Ctrl Enter 梳理</kbd></small><Button onClick={() => void planGuidedReading()} disabled={isPlanningReading || guidedConcern.trim().length < 4}><span>✦</span>{isPlanningReading ? '正在理解你的困扰…' : '帮我整理问题'}<ChevronRight /></Button></div>
                 {guidedPlanError && <p className="agent-guided-error">{guidedPlanError}</p>}
-              </div>
-
-              {guidedPlan && <div className="agent-plan-result">
-                <div className="agent-plan-heading"><div><span>智能体建议这样问</span><small>{guidedPlan.mode === 'model' ? 'AI已整理' : '本地规则已整理'}</small></div><b>{spreadDefinitions[guidedPlan.spread].name} · {spreadDefinitions[guidedPlan.spread].countLabel}</b></div>
-                <Textarea value={guidedPlan.refinedQuestion} onChange={(event) => setGuidedPlan((current) => current ? { ...current, refinedQuestion: event.target.value.slice(0, 500) } : current)} aria-label="整理后的占卜问题" />
-                <div className="agent-plan-reason"><span>为什么推荐这个牌阵</span><p>{guidedPlan.reason}</p></div>
-                <div className="agent-plan-followups"><span>抽牌后还会确认</span>{guidedPlan.followUps.map((item, index) => <p key={`guided-followup-${index}`}><i>{index + 1}</i>{item}</p>)}</div>
-                <div className="agent-plan-actions"><button type="button" onClick={() => setGuidedPlan(null)}>重新整理</button><Button onClick={acceptGuidedPlan}>采用这个问题并去抽牌<ChevronRight /></Button></div>
+              </div> : <div className="agent-plan-result">
+                <div className="agent-plan-heading"><div><span>QUESTION REFINED · 问题确认</span><h3>我理解你真正想确认的是</h3><small>{guidedPlan.mode === 'model' ? '星契智能体已整理' : '已根据你的描述整理'}</small></div><b>✦</b></div>
+                <div className="agent-refined-question"><Textarea value={guidedPlan.refinedQuestion} onChange={(event) => setGuidedPlan((current) => current ? { ...current, refinedQuestion: event.target.value.slice(0, 500) } : current)} aria-label="整理后的占卜问题" /></div>
+                <details className="agent-original-concern"><summary>查看原始描述 <ChevronRight /></summary><p>{guidedConcern}</p></details>
+                <div className="agent-spread-recommendation">
+                  <div><span>RECOMMENDED SPREAD · 推荐牌阵</span><b>{spreadDefinitions[guidedPlan.spread].name} · {spreadDefinitions[guidedPlan.spread].countLabel}</b><p>{guidedPlan.reason}</p></div>
+                  <div className={`agent-spread-sigil sigil-${guidedPlan.spread}`} aria-hidden="true"><i /><i /><span>{spreadScenes[guidedPlan.spread].symbol}</span></div>
+                  <button type="button" onClick={() => setGuidedSpreadPickerOpen((current) => !current)} aria-expanded={guidedSpreadPickerOpen}>换一个牌阵 <ChevronRight /></button>
+                </div>
+                {guidedSpreadPickerOpen && <div className="agent-spread-picker" aria-label="更换推荐牌阵">{(Object.entries(spreadDefinitions) as [Spread,SpreadDefinition][]).map(([key,item]) => <button type="button" className={guidedPlan.spread === key ? 'active' : ''} key={`guided-spread-${key}`} onClick={() => { setGuidedPlan((current) => current ? { ...current, spread: key, reason: item.description } : current); setGuidedSpreadPickerOpen(false); }}><span>{spreadScenes[key].symbol}</span><b>{item.name}</b><small>{item.countLabel}{guidedPlan.spread === key ? ' · 推荐' : ''}</small></button>)}</div>}
+                <div className="agent-plan-followups"><span>抽牌后，星契还会确认</span>{guidedPlan.followUps.map((item, index) => <p key={`guided-followup-${index}`}><i>{index + 1}</i>{item}</p>)}</div>
+                <div className="agent-plan-actions"><button type="button" onClick={() => { setGuidedPlan(null); setGuidedSpreadPickerOpen(false); }}>调整问题</button><Button onClick={acceptGuidedPlan}>就问这个<ChevronRight /></Button></div>
               </div>}
 
               <div className="agent-empty-divider"><span>或者</span></div>
-              <div className="agent-empty-actions"><Button variant="outline" onClick={() => { setGuidedPlan(null); setView('reading'); }}><MoonStar />自己选择牌阵</Button>{history.length > 0 && <button type="button" onClick={() => loadAgentReading(history[0])}><Clock3 />读取最近日记</button>}</div>
-              {history.length > 1 && <div className="agent-recent-empty"><small>或者选择一条记录</small>{history.slice(0,4).map((record) => <button type="button" key={`agent-empty-${record.id}`} onClick={() => loadAgentReading(record)}><span>{spreadDefinitions[record.spread].name}</span><b>{record.question || '没有写下问题'}</b><small>{formatDiaryDate(record.createdAt)}</small></button>)}</div>}
+              <div className="agent-empty-actions"><Button variant="outline" onClick={() => { setGuidedPlan(null); setView('reading'); }}><MoonStar />自己选择牌阵</Button>{history.length > 0 && <details className="agent-journal-resume"><summary><Clock3 />从塔罗日记继续</summary><div><span>最近的塔罗日记</span>{history.slice(0,5).map((record) => <button type="button" key={`agent-journal-resume-${record.id}`} onClick={() => loadAgentReading(record)}><small>{formatDiaryDate(record.createdAt)}</small><b>{spreadDefinitions[record.spread].name}</b><p>{record.question || '未记录提问'}</p></button>)}</div></details>}</div>
+              {history.length > 1 && <div className="agent-recent-empty"><div className="agent-recent-heading"><span>RECENT READINGS</span><b>最近的星契记录</b></div>{history.slice(0,4).map((record) => <button type="button" key={`agent-empty-${record.id}`} onClick={() => loadAgentReading(record)}><span>{spreadDefinitions[record.spread].name}</span><b className={record.question ? '' : 'is-empty'}>{record.question || '未记录提问'}</b><small>{formatDiaryDate(record.createdAt)}</small><em>继续解读 →</em></button>)}</div>}
             </div>
           ) : (
             <div className="agent-workspace">
               <aside className="agent-context-panel">
-                <div className="agent-panel-label"><span>01</span><div><small>CONTEXT</small><b>当前连接的牌阵</b></div></div>
+                <div className="agent-panel-label"><span>✦</span><div><small>CURRENT SPREAD</small><b>当前牌阵祭坛</b></div></div>
                 <div className="agent-context-question"><small>{spreadInfo.name}</small><p>{question || '这次没有写下具体问题，将围绕牌面开放解读。'}</p></div>
                 <div className="agent-context-deck" aria-label="当前牌阵牌面">
                   {drawn.slice(0,7).map((card,index) => <div key={`agent-card-${card.id}-${index}`}><img src={cardImagePath(card)} alt={card.name} className={card.reversed ? 'is-reversed' : ''} /><span>{spreadInfo.positions[index]?.short || `牌 ${index + 1}`}</span></div>)}
@@ -3585,7 +3598,7 @@ export default function Home() {
                 <div className="agent-context-summary"><span>智能体正在使用</span><p>{drawn.length} 张原牌{clarifiers.length ? ` + ${clarifiers.length} 张澄清牌` : ''} · {[...drawn,...clarifiers].filter((card) => card.reversed).length} 张逆位 · {structure?.majorCount || 0} 张大阿卡纳</p></div>
                 {agentCombinationInsights.length > 0 && <div className="agent-combination-snapshot"><span>组合知识库命中 {agentCombinationInsights.length} 条</span>{agentCombinationInsights.slice(0, 3).map((item) => <div key={`${item.kind}-${item.title}`}><b>{item.title}</b><p>{item.meaning}</p></div>)}</div>}
 
-                <div className="agent-panel-label agent-source-label"><span>02</span><div><small>SOURCE</small><b>切换解读记录</b></div></div>
+                <div className="agent-panel-label agent-source-label"><span>02</span><div><small>READING ARCHIVE</small><b>切换解读档案</b></div></div>
                 <div className="agent-source-list">
                   {history.length ? history.slice(0,4).map((record) => {
                     const signature = record.cards.map((card) => `${card.id}${card.reversed ? 'r' : 'u'}`).join('-');
@@ -3612,7 +3625,7 @@ export default function Home() {
                       ['矛盾与盲点','找出牌面最大的矛盾，以及我最容易忽略的地方。','02'],
                       ['三步行动计划','把这组牌的建议拆成今天、本周和接下来一个月的行动。','03'],
                       ['现实验证信号','接下来要观察哪些现实信号，才能判断趋势是否正在发生？','04'],
-                    ].map(([title,prompt,index]) => <button type="button" key={title} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}><small>{index}</small><span><b>{title}</b><em>{prompt}</em></span><ChevronRight /></button>)}
+                    ].map(([title,prompt,index]) => <button type="button" data-mode={index} key={title} onClick={() => void sendChat(prompt)} disabled={isChatStreaming || chatRemaining <= 0}><small>{index}</small><i className="agent-workflow-glyph" aria-hidden="true" /><span><b>{title}</b><em>{prompt}</em></span><ChevronRight /></button>)}
                   </div>
                 </section>
 
@@ -3622,10 +3635,10 @@ export default function Home() {
                 </section>}
 
                 <section className="agent-capability-lab" aria-labelledby="agent-lab-title">
-                  <div className="agent-lab-heading"><div><span>04 · PERSONAL CONTEXT</span><h2 id="agent-lab-title">让智能体真正理解你的变化</h2></div><div className="agent-lab-controls"><small>{cloudSyncStatus === 'ready' ? '已登录，设置会同步到云端' : '未登录时保存在当前设备'}</small><button type="button" className="agent-lab-toggle" aria-expanded={agentLabOpen} onClick={() => setAgentLabOpen((current) => !current)}>{agentLabOpen ? '收起工具' : '展开工具'}<ChevronRight /></button></div></div>
+                  <div className="agent-lab-heading"><div><span>04 · STELLAR ARCHIVE</span><h2 id="agent-lab-title">星契档案馆</h2><p>记忆、复盘与过往牌阵，只在你允许时成为新的解读依据。</p></div><div className="agent-lab-controls"><small>{cloudSyncStatus === 'ready' ? '已登录，设置会同步到云端' : '未登录时保存在当前设备'}</small><button type="button" className="agent-lab-toggle" aria-expanded={agentLabOpen} onClick={() => setAgentLabOpen((current) => !current)}>{agentLabOpen ? '收起档案' : '展开档案'}<ChevronRight /></button></div></div>
                   <div className={`agent-capability-grid ${agentLabOpen ? 'open' : ''}`}>
                     <article className="agent-memory-card">
-                      <div className="agent-capability-title"><span>长期记忆</span><button type="button" role="switch" aria-checked={agentMemoryEnabled} className={agentMemoryEnabled ? 'active' : ''} onClick={() => saveAgentMemory(!agentMemoryEnabled,agentMemoryNote)}><i />{agentMemoryEnabled ? '已开启' : '未开启'}</button></div>
+                      <div className="agent-capability-title"><span><small>MEMORY ARCHIVE</small>长期记忆</span><button type="button" role="switch" aria-checked={agentMemoryEnabled} className={agentMemoryEnabled ? 'active' : ''} onClick={() => saveAgentMemory(!agentMemoryEnabled,agentMemoryNote)}><i />{agentMemoryEnabled ? '已开启' : '未开启'}</button></div>
                       <p>主动告诉智能体需要长期记住的背景。关闭后，内容仍留在设备中，但不会发送给模型。</p>
                       <div className="agent-memory-toolbar"><span>智能体当前记住的内容 · {agentMemoryNote.length}/1200</span><button type="button" onClick={clearAgentMemory} disabled={!agentMemoryNote.trim()}>删除全部</button></div>
                       <Textarea value={agentMemoryNote} onChange={(event) => saveAgentMemory(agentMemoryEnabled,event.target.value.slice(0,1200))} placeholder="例如：我正在考虑转行；关系中的 TA 用代号 A；我更希望得到直接建议……" aria-label="希望智能体长期记住的背景" />
@@ -3633,7 +3646,7 @@ export default function Home() {
                     </article>
 
                     <article className="agent-journal-card">
-                      <div className="agent-capability-title"><span>日记复盘</span><button type="button" role="switch" aria-checked={agentJournalEnabled} className={agentJournalEnabled ? 'active' : ''} disabled={!activeAgentRecord} onClick={() => setAgentJournalEnabled((current) => !current)}><i />{agentJournalEnabled ? '允许读取' : '不读取'}</button></div>
+                      <div className="agent-capability-title"><span><small>LUNAR JOURNAL</small>日记复盘</span><button type="button" role="switch" aria-checked={agentJournalEnabled} className={agentJournalEnabled ? 'active' : ''} disabled={!activeAgentRecord} onClick={() => setAgentJournalEnabled((current) => !current)}><i />{agentJournalEnabled ? '允许读取' : '不读取'}</button></div>
                       {activeAgentRecord ? <>
                         <p>将这次牌面和后来真正发生的事情分开核对，减少事后硬套牌义。</p>
                         <div className="agent-journal-status"><span className={activeAgentRecord.notes?.outcome?.trim() ? 'done' : ''}>实际发生</span><span className={activeAgentRecord.notes?.accurate?.trim() ? 'done' : ''}>准确部分</span><span className={activeAgentRecord.notes?.missed?.trim() ? 'done' : ''}>未发生</span><span className={activeAgentRecord.notes?.review7?.trim() ? 'done' : ''}>7天回看</span><span className={activeAgentRecord.notes?.review30?.trim() ? 'done' : ''}>30天复盘</span><span className={activeAgentRecord.notes?.correction?.trim() ? 'done' : ''}>事实校准</span></div>
@@ -3642,7 +3655,7 @@ export default function Home() {
                     </article>
 
                     <article className="agent-compare-card">
-                      <div className="agent-capability-title"><span>多次牌阵对比</span><small>已选 {comparisonIds.length}／3</small></div>
+                      <div className="agent-capability-title"><span><small>FATE TRAJECTORY</small>多次牌阵对比</span><small>已选 {comparisonIds.length}／3</small></div>
                       <p>选择两至三次记录，比较重复牌、元素变化、正逆位和行动方向。</p>
                       <div className="agent-compare-list">
                         {history.slice(0,5).map((record) => <label key={`compare-${record.id}`} className={comparisonIds.includes(record.id) ? 'active' : ''}><input type="checkbox" checked={comparisonIds.includes(record.id)} onChange={() => toggleComparisonReading(record.id)} /><i /><span><b>{spreadDefinitions[record.spread].name}</b><small>{formatDiaryDate(record.createdAt)}</small></span></label>)}
@@ -3654,6 +3667,7 @@ export default function Home() {
                 </section>
 
                 <section className="ai-tarot-chat agent-chat-console" aria-labelledby="agent-chat-title">
+                  <div className="agent-oracle-crown" aria-hidden="true"><i />☾ <span>✦</span> ☽<i /></div>
                   <div className="ai-chat-heading">
                     <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
                     <div><span>LIVE ORACLE CONVERSATION</span><h3 id="agent-chat-title">继续追问这组牌</h3><p>回复会综合当前牌阵、日记上下文与本轮对话，不会只复述单张牌义。</p></div>
