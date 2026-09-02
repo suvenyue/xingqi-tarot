@@ -551,10 +551,10 @@ const MAX_HISTORY_ITEMS = 120;
 const MAX_DAILY_ITEMS = 366;
 const dailyMoods = ['平静','轻盈','专注','疲惫','混乱'] as const;
 const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string }> = {
-  gentle: { name: '温柔陪伴', note: '先接住感受，再慢慢梳理', symbol: '☾' },
-  analytical: { name: '理性解析', note: '按牌位与证据清晰拆解', symbol: '◇' },
-  intuitive: { name: '直觉灵感', note: '强调意象、共鸣与内在声音', symbol: '✦' },
-  direct: { name: '直言提醒', note: '坦率指出矛盾、盲点和代价', symbol: '↗' },
+  gentle: { name: '月眠 · 温柔闺蜜', note: '接住情绪，但不拿安慰代替答案', symbol: '☾' },
+  analytical: { name: '星衡 · 冷面军师', note: '先给结论，再核对牌位与依据', symbol: '◇' },
+  intuitive: { name: '星仔 · 搞笑损友', note: '会接梗吐槽，也会认真把牌说清', symbol: '✹' },
+  direct: { name: '黑曜 · 清醒毒舌', note: '拆掉滤镜，专门指出矛盾和盲点', symbol: '◆' },
 };
 const replyLengths: Record<ReplyLength, { name: string; note: string }> = {
   brief: { name: '简短', note: '完整要点 · 约120～220字' },
@@ -3238,7 +3238,7 @@ export default function Home() {
                 </details>
               </>}
 
-              <section className="ai-tarot-chat" aria-labelledby="ai-chat-title">
+              <section className="ai-tarot-chat" data-persona={chatStyle} aria-labelledby="ai-chat-title">
                 <div className="ai-chat-heading">
                   <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
                   <div>
@@ -3262,11 +3262,12 @@ export default function Home() {
                   <small>{drawn.map((card) => `${card.name}${card.reversed ? '·逆' : ''}`).join(' · ')}{clarifiers.length ? ` · 澄清牌 ${clarifiers.map((card) => card.name).join('、')}` : ''}</small>
                 </div>
 
-                <div className="ai-style-picker" aria-label="选择AI对话风格">
+                <div className="ai-style-picker" data-persona={chatStyle} aria-label="选择AI对话风格">
                   {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key, item]) => (
                     <button
                       key={key}
                       type="button"
+                      data-style={key}
                       className={chatStyle === key ? 'active' : ''}
                       onClick={() => chooseChatStyle(key)}
                       aria-pressed={chatStyle === key}
@@ -3666,7 +3667,7 @@ export default function Home() {
                   </div>
                 </section>
 
-                <section className="ai-tarot-chat agent-chat-console" aria-labelledby="agent-chat-title">
+                <section className="ai-tarot-chat agent-chat-console" data-persona={chatStyle} aria-labelledby="agent-chat-title">
                   <div className="agent-oracle-crown" aria-hidden="true"><i />☾ <span>✦</span> ☽<i /></div>
                   <div className="ai-chat-heading">
                     <div className="ai-oracle-mark"><MessageCircle aria-hidden="true" /></div>
@@ -3679,8 +3680,8 @@ export default function Home() {
                     <div className="ai-agent-tools">{agentTools.map((tool) => <small key={tool}>✓ {tool}</small>)}</div>
                   </div>
 
-                  <div className="ai-style-picker" aria-label="选择智能体对话风格">
-                    {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key,item]) => <button key={key} type="button" className={chatStyle === key ? 'active' : ''} onClick={() => chooseChatStyle(key)} aria-pressed={chatStyle === key}><i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span></button>)}
+                  <div className="ai-style-picker" data-persona={chatStyle} aria-label="选择智能体对话风格">
+                    {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key,item]) => <button key={key} type="button" data-style={key} className={chatStyle === key ? 'active' : ''} onClick={() => chooseChatStyle(key)} aria-pressed={chatStyle === key}><i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span></button>)}
                   </div>
 
                   <div className="ai-reply-length" aria-label="选择回答长度"><span>回答长度</span>{(Object.entries(replyLengths) as [ReplyLength, (typeof replyLengths)[ReplyLength]][]).map(([key,item]) => <button key={key} type="button" className={replyLength === key ? 'active' : ''} aria-pressed={replyLength === key} onClick={() => chooseReplyLength(key)}><b>{item.name}</b><small>{item.note}</small></button>)}</div>

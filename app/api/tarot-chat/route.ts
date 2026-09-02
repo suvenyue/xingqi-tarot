@@ -53,10 +53,10 @@ type RequestBody = {
 type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'combinations' | 'actions' | 'memory' | 'journal' | 'compare';
 
 const STYLE_PROMPTS = {
-  gentle: '像一个真正关心用户、但不会过度安慰的朋友。先接住最具体的感受，再说一两个有用的观察。',
-  analytical: '像一个头脑清楚、表达利落的朋友。把推论讲明白，但不要写成报告或分析模板。',
-  intuitive: '像一个直觉敏锐、说话有温度的朋友。允许一点联想，但不要故作神秘，最后要落回现实。',
-  direct: '像一个愿意说真话的朋友。直接指出矛盾和盲点，可以坦率，但不要审判、训话或吓人。',
+  gentle: '你是“月眠”，像一个情绪稳定、细腻耐心的闺蜜。先接住最具体的感受，再温和地说清牌面问题；不要过度安慰，也不要回避不舒服的事实。',
+  analytical: '你是“星衡”，像一个冷静、简洁、重证据的军师。先给明确结论，再按牌位、正逆位和组合依据拆解；区分牌面证据、合理推测和仍需现实确认的部分。',
+  intuitive: '你是“星仔”，像一个会接梗、会轻轻吐槽的损友。可以用自然的比喻和一两句好笑的话让用户放松，但笑点不能替代解牌；随后必须把牌位证据和现实建议说清楚。禁止拿疾病、死亡、创伤、贫困或用户的痛苦开玩笑。',
+  direct: '你是“黑曜”，像一个嘴上不留滤镜、心里有分寸的清醒朋友。第一句直接指出矛盾、自我欺骗或现实代价，可以毒舌但只针对行为和逻辑；禁止羞辱、贬低、攻击用户或替用户作决定。',
 } as const;
 
 const LENGTH_PROMPTS = {
@@ -314,19 +314,62 @@ function localAgentBase(message: string, context: TarotContext | undefined) {
   return `${lead}${context?.synthesis ? `\n\n${trimText(context.synthesis, 280)}` : ''}${context?.actions?.watch ? `\n\n接下来可以观察：${trimText(context.actions.watch, 110)}` : ''}`;
 }
 
-function localAgentText(message: string, context: TarotContext | undefined, length: keyof typeof LENGTH_PROMPTS = 'standard') {
+function applyLocalPersona(text: string, style: keyof typeof STYLE_PROMPTS, naturalFollowUp: boolean) {
+  if (style === 'analytical') {
+    const structured = text
+      .replace('最大的矛盾：','结论｜最大矛盾：')
+      .replace('牌面依据：','依据：')
+      .replace('你最容易忽略的是','盲点：')
+      .replace('现在适合：','优先行动：')
+      .replace('暂时避免：','风险项：')
+      .replace('接下来观察：','验证信号：');
+    return `${naturalFollowUp ? '先把感受和事实分开看。' : '先给判断，再核对牌面。'}${structured}`;
+  }
+  if (style === 'intuitive') {
+    const playful = text
+      .replace('最大的矛盾：','牌面这次没打算端水。最拧巴的地方是：')
+      .replace('牌面依据：','不是我乱吐槽，证据在这儿：')
+      .replace('你最容易忽略的是','还有个容易被你一键跳过的重点：')
+      .replace('现在适合：','先别给自己加戏，可以做的是：')
+      .replace('暂时避免：','这一步先别手滑：')
+      .replace('接下来观察：','接下来盯住这个信号：');
+    return `${naturalFollowUp ? '好，先把脑内小剧场暂停一下。' : ''}${playful}`;
+  }
+  if (style === 'direct') {
+    const blunt = text
+      .replace('最大的矛盾：','别替这组牌找台阶。真正的矛盾是：')
+      .replace('牌面依据：','证据：')
+      .replace('你最容易忽略的是','你最容易替自己美化的地方是：')
+      .replace('现在适合：','现在就做：')
+      .replace('暂时避免：','别再做：')
+      .replace('接下来观察：','只看这个现实信号：');
+    return `${naturalFollowUp ? '我不绕弯。' : ''}${blunt}`;
+  }
+  const gentle = text
+    .replace('最大的矛盾：','最关键、也最需要被看见的矛盾是：')
+    .replace('牌面依据：','我这样判断，是因为：')
+    .replace('你最容易忽略的是','还有一个值得轻轻留意的地方：')
+    .replace('现在适合：','你可以先试着：')
+    .replace('暂时避免：','暂时不用勉强自己：')
+    .replace('接下来观察：','接下来可以慢慢观察：');
+  return `${naturalFollowUp ? '' : '我会陪你看清楚，也不会拿安慰代替答案。'}${gentle}`;
+}
+
+function localAgentText(message: string, context: TarotContext | undefined, length: keyof typeof LENGTH_PROMPTS = 'standard', style: keyof typeof STYLE_PROMPTS = 'gentle') {
   const base = localAgentBase(message, context);
-  if (isNaturalFollowUp(message)) return fitCompleteText(base,260);
-  if (length === 'brief') return fitCompleteText(base, 220);
+  const naturalFollowUp = isNaturalFollowUp(message);
+  const styledBase = applyLocalPersona(base,style,naturalFollowUp);
+  if (naturalFollowUp) return fitCompleteText(styledBase,260);
+  if (length === 'brief') return fitCompleteText(styledBase, 220);
   if (length === 'standard') {
     const action = context?.actions?.doNow ? `\n\n更实际一点，现在可以先做：${trimText(context.actions.doNow, 130)}` : '';
-    return fitCompleteText(`${base}${base.length < 320 ? action : ''}`, 620);
+    return fitCompleteText(`${styledBase}${styledBase.length < 320 ? action : ''}`, 620);
   }
   const cards = Array.isArray(context?.cards) ? context.cards : [];
   const cardSection = cards.map((card, index) => `${index + 1}. ${card.position || '牌位'}的${card.name || '未知牌'}·${card.orientation || '方向未知'}：${trimText(card.meaning || card.keywords, 150)}`).join('\n');
   const comboSection = (context?.combinations || []).slice(0,5).map((item) => `- ${item.title || '组合'}：${trimText(`${item.evidence || ''}${item.meaning || ''}`, 220)}`).join('\n');
   return [
-    `先说重点：${trimText(context?.verdict, 220) || trimText(base, 220)}`,
+    `${style === 'gentle' ? '我陪你把重点看清楚：' : style === 'analytical' ? '核心判断：' : style === 'intuitive' ? '先看牌面这出戏的主线：' : '先把滤镜摘了：'}${trimText(context?.verdict, 220) || trimText(base, 220)}`,
     cardSection ? `逐张放回牌位看\n${cardSection}` : '',
     comboSection ? `牌与牌之间\n${comboSection}` : '',
     context?.energy ? `整体结构\n${trimText(context.energy, 260)}` : '',
@@ -345,8 +388,8 @@ function agentHeaders(tools: AgentToolId[], mode: 'model' | 'local', remaining: 
   };
 }
 
-function localAgentResponse(message: string, context: TarotContext | undefined, tools: AgentToolId[], remaining: number, length: keyof typeof LENGTH_PROMPTS) {
-  return new Response(localAgentText(message, context, length), {
+function localAgentResponse(message: string, context: TarotContext | undefined, tools: AgentToolId[], remaining: number, length: keyof typeof LENGTH_PROMPTS, style: keyof typeof STYLE_PROMPTS) {
+  return new Response(localAgentText(message, context, length,style), {
     status: 200,
     headers: agentHeaders(tools, 'local', remaining),
   });
@@ -412,6 +455,7 @@ export async function POST(request: Request) {
   const message = body.message?.trim().slice(0, 2000) || '';
   const length = body.length && body.length in LENGTH_PROMPTS ? body.length : 'standard';
   const lengthConfig = LENGTH_PROMPTS[length];
+  const style = body.style && body.style in STYLE_PROMPTS ? body.style : 'gentle';
   const naturalFollowUp = isNaturalFollowUp(message);
   const contradictionRequest = isContradictionRequest(message);
   const responseConfig = naturalFollowUp
@@ -429,15 +473,15 @@ export async function POST(request: Request) {
   }
 
   const tools = selectAgentTools(message, body);
-  if (!apiKey) return localAgentResponse(message, body.context, tools, quota.remaining, length);
+  if (!apiKey) return localAgentResponse(message, body.context, tools, quota.remaining, length,style);
 
-  const style = body.style && body.style in STYLE_PROMPTS ? body.style : 'gentle';
   const instructions = [
     '你是“星契 Tarot”的塔罗对话伙伴，熟悉韦特体系。请始终使用简体中文。',
     '不要宣称能确定预测未来，不要制造宿命、恐惧或依赖。提供具体、可执行、尊重用户自主权的建议。',
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
     naturalFollowUp ? compactContextText(body.context) : `${agentEvidence(body.context, tools)}\n\n${contextText(body.context)}`,
     STYLE_PROMPTS[style],
+    '四种角色只改变说话方式、关注顺序和表达节奏，不能改变同一组牌的核心事实与证据。',
     '必须严格围绕提供的牌阵、牌位、正逆位和用户问题回答；若信息不足，请明确说明这是可能性而非事实。',
     contradictionRequest ? '用户正在要求“矛盾与盲点”分析。第一句必须直接指出最大的矛盾，明确写出至少两张牌及各自牌位；随后单独说明最容易忽略的地方，并给出对应牌面依据。禁止转成情绪安慰、泛泛追问或建议用户继续描述感受。若牌面不足两张，必须明确说证据不足。' : '',
     naturalFollowUp ? '当前是连续对话，不是新一轮解牌。把上一轮牌阵当作背景，不要抢着分析。先回应用户表达的情绪、愿望或犹豫；可以像朋友一样说“我知道”“我听见了”，但不要假装拥有人的经历。' : '',
@@ -544,7 +588,7 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!upstream) return localAgentResponse(message, body.context, tools, quota.remaining, length);
+  if (!upstream) return localAgentResponse(message, body.context, tools, quota.remaining, length,style);
 
   if (!upstream.ok) {
     const upstreamDetail = (await upstream.text().catch(() => '')).slice(0, 500);
@@ -553,14 +597,14 @@ export async function POST(request: Request) {
       model,
       detail: upstreamDetail,
     });
-    return localAgentResponse(message, body.context, tools, quota.remaining, length);
+    return localAgentResponse(message, body.context, tools, quota.remaining, length,style);
   }
 
   const contentType = upstream.headers.get('content-type') || '';
   if (!upstream.body || contentType.includes('application/json')) {
     const payload = await upstream.json().catch(() => null);
     const completed = extractCompletedText(payload);
-    if (!completed) return localAgentResponse(message, body.context, tools, quota.remaining, length);
+    if (!completed) return localAgentResponse(message, body.context, tools, quota.remaining, length,style);
     return new Response(completed, {
       headers: agentHeaders(tools, 'model', quota.remaining),
     });
@@ -597,7 +641,7 @@ export async function POST(request: Request) {
   const finishStream = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (!emittedAny) {
       const retried = await retryCompletedText();
-      controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length)}`));
+      controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length,style)}`));
     } else if (finishReason === 'length' || !replyLooksComplete(emittedText)) {
       const continued = await completeInterruptedText(emittedText, finishReason === 'length');
       const supplement = continued || '——刚才的句子没有传完整。先保留已经说清的部分，不用据此仓促下结论；你可以点“重新生成”让我完整说一遍。';
@@ -632,7 +676,7 @@ export async function POST(request: Request) {
       } catch {
         if (!emittedAny) {
           const retried = await retryCompletedText();
-          controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length)}`));
+          controller.enqueue(encoder.encode(retried || `【本地解读】\n${localAgentText(message, body.context, length,style)}`));
         } else {
           const continued = await completeInterruptedText(emittedText, true);
           controller.enqueue(encoder.encode(`\n\n${continued || '——刚才的句子没有传完整。先保留已经说清的部分，不用据此仓促下结论；你可以点“重新生成”让我完整说一遍。'}`));
