@@ -45,7 +45,7 @@ function starNoise(index: number, salt: number) {
   return ((value ^ (value >>> 16)) >>> 0) / 0xffffffff;
 }
 
-const twinkleStars = Array.from({ length: 22 }, (_, index) => ({
+const twinkleStars = Array.from({ length: 40 }, (_, index) => ({
   left: `${3 + starNoise(index, 1) * 94}%`,
   top: `${2 + starNoise(index, 2) * 95}%`,
   '--twinkle-size': `${.85 + starNoise(index, 3) * 2.15}px`,

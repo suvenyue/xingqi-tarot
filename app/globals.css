@@ -777,7 +777,7 @@ body::before {
   transition: opacity 4s ease;
 }
 .sky-dawn {
-  --sky-stars-opacity: .56;
+  --sky-stars-opacity: .72;
   --sky-constellation-opacity: .34;
   --sky-line: 232,195,160;
   --time-sky-background:
@@ -786,7 +786,7 @@ body::before {
     linear-gradient(155deg,#11102a 0%,#28162e 55%,#3b202d 100%);
 }
 .sky-day {
-  --sky-stars-opacity: .28;
+  --sky-stars-opacity: .5;
   --sky-constellation-opacity: .22;
   --sky-line: 186,202,230;
   --time-sky-background:
@@ -796,7 +796,7 @@ body::before {
 }
 .sky-day .time-sky::after { opacity: .55; }
 .sky-dusk {
-  --sky-stars-opacity: .7;
+  --sky-stars-opacity: .82;
   --sky-constellation-opacity: .38;
   --sky-line: 231,187,164;
   --time-sky-background:
@@ -2837,7 +2837,7 @@ body {
   .view-agent .agent-chat-window { max-height: 52svh; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .view-agent .ai-chat-composer { position: sticky; z-index: 24; bottom: calc(env(safe-area-inset-bottom,0px) + 8px); margin: 12px -5px 0; padding: 9px; border: 1px solid rgba(225,190,112,.14); border-radius: 15px; background: rgba(10,8,20,.96); box-shadow: 0 -12px 32px rgba(2,2,8,.48); backdrop-filter: blur(18px); }
   .view-agent .agent-workflow-panel,.view-agent .agent-capability-lab { content-visibility: auto; contain-intrinsic-size: 1px 520px; }
-  .view-agent .twinkle-star:nth-child(n+14) { display: none; }
+  .view-agent .twinkle-star:nth-child(n+23) { display: none; }
   .view-agent .ai-message-evidence li { font-size: 11px; }
   .view-agent .ai-answer-feedback > span,.view-agent .ai-answer-feedback button { font-size: 10px; }
   .view-agent .ai-answer-feedback button { min-height: 34px; }
@@ -2906,12 +2906,9 @@ body {
 }
 
 .stars {
-  opacity: .2 !important;
-  background-image:
-    radial-gradient(circle,rgba(224,230,240,.58) 0 .7px,transparent 1.2px),
-    radial-gradient(circle,rgba(195,172,121,.42) 0 .65px,transparent 1.1px) !important;
-  background-size: 181px 223px,293px 257px !important;
-  background-position: 21px 37px,103px 71px !important;
+  opacity: var(--sky-stars-opacity) !important;
+  background-image: none !important;
+  contain: paint;
 }
 
 .site-header {
