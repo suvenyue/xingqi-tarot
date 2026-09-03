@@ -3912,3 +3912,83 @@ body {
   .agent-hero-astrolabe,.agent-chat-console::before,.agent-empty-orbit i,.agent-understanding-path span.active i,.agent-clarifier-cards article { animation: none !important; }
   .agent-empty-state { animation: none !important; }
 }
+
+/* Mobile stability: preserve the celestial density while reducing continuous GPU work. */
+@media (max-width: 760px) {
+  .site-canvas > .stars .twinkle-star:nth-child(n+19),
+  .table-stars .twinkle-star:nth-child(n+7) {
+    animation: none;
+    opacity: .3;
+  }
+
+  .view-agent .twinkle-star:nth-child(n+23) {
+    display: block;
+    animation: none;
+    opacity: .26;
+  }
+
+  .stars::before,
+  .stars::after,
+  .constellation-field.zone-reading .for-reading,
+  .constellation-field.zone-selection .for-selection,
+  .constellation-field.zone-daily .for-daily,
+  .constellation-field.zone-library .for-library,
+  .constellation-field.zone-history .for-history,
+  .constellation-stars circle.is-bright,
+  .agent-hero-astrolabe,
+  .agent-chat-console::before {
+    animation: none;
+  }
+
+  .constellation-group,
+  .constellation-stars circle,
+  .constellation-stars circle.is-bright {
+    filter: none;
+  }
+
+  .cloud-account-chip,
+  .moon-journey,
+  .intro-panel,
+  .table-panel,
+  .view-agent .ai-chat-composer {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .site-header {
+    -webkit-backdrop-filter: blur(8px) saturate(1.06);
+    backdrop-filter: blur(8px) saturate(1.06);
+  }
+
+  .agent-chat-console,
+  .agent-chat-window,
+  .agent-chat-window > *,
+  .agent-clarifier-picker,
+  .agent-clarifier-results {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .agent-chat-window {
+    grid-template-columns: minmax(0,1fr);
+  }
+
+  .agent-clarifier-deck {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: 7px;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .agent-clarifier-deck > button {
+    scroll-snap-align: center;
+    touch-action: pan-x;
+  }
+}
