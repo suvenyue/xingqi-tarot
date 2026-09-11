@@ -488,6 +488,7 @@ type ChatMessage = {
   createdAt: number;
   tools?: string[];
   mode?: AgentMode;
+  style?: ChatStyle;
   evidence?: string[];
   combinations?: Array<Pick<CombinationInsight, 'title' | 'cards' | 'positions' | 'evidence' | 'meaning'>>;
   feedback?: 'helpful' | 'vague' | 'missed' | 'contradictory';
@@ -551,10 +552,10 @@ const MAX_HISTORY_ITEMS = 120;
 const MAX_DAILY_ITEMS = 366;
 const dailyMoods = ['平静','轻盈','专注','疲惫','混乱'] as const;
 const chatStyles: Record<ChatStyle, { name: string; note: string; symbol: string }> = {
-  gentle: { name: '月眠 · 温柔闺蜜', note: '接住情绪，但不拿安慰代替答案', symbol: '☾' },
-  analytical: { name: '星衡 · 冷面军师', note: '先给结论，再核对牌位与依据', symbol: '◇' },
-  intuitive: { name: '星仔 · 搞笑损友', note: '会接梗吐槽，也会认真把牌说清', symbol: '✹' },
-  direct: { name: '黑曜 · 清醒毒舌', note: '拆掉滤镜，专门指出矛盾和盲点', symbol: '◆' },
+  gentle: { name: '月眠 · 温柔闺蜜', note: '温柔说实话，像私下聊天', symbol: '☾' },
+  analytical: { name: '星衡 · 冷面军师', note: '结论、证据、行动，逐条分析', symbol: '◇' },
+  intuitive: { name: '星仔 · 搞笑损友', note: '日常比喻、轻吐槽、有梗', symbol: '✹' },
+  direct: { name: '黑曜 · 清醒毒舌', note: '短句直说，点破代价，立刻行动', symbol: '◆' },
 };
 const replyLengths: Record<ReplyLength, { name: string; note: string }> = {
   brief: { name: '简短', note: '完整要点 · 约120～220字' },
@@ -1527,8 +1528,17 @@ export default function Home() {
   }
 
   function chooseChatStyle(style: ChatStyle) {
+    if (isChatStreaming) return;
     setChatStyle(style);
     saveChat(chatMessages, style, replyLength);
+  }
+
+  function renderStyleSwitchNote() {
+    const lastQuestion = [...chatMessages].reverse().find(message => message.role === 'user');
+    return <div className="ai-style-switch-note">
+      <span>{agentMode === 'local' ? '当前为本地牌义；AI 角色风格需要连接模型后使用。' : `新回答使用「${chatStyles[chatStyle].name.split(' · ')[0]}」；已有回答保留原风格。`}</span>
+      {lastQuestion && <button type="button" disabled={isChatStreaming || chatRemaining <= 0} onClick={() => void sendChat(lastQuestion.content, { bypassActions: true })}>用此风格重答</button>}
+    </div>;
   }
 
   function chooseReplyLength(length: ReplyLength) {
@@ -1863,7 +1873,7 @@ export default function Home() {
     let responseMode: AgentMode = 'model';
     let toolLabels = defaultAgentTools;
     chatAbortRef.current = abortController;
-    setChatMessages([...baseMessages, { id: assistantId, role: 'assistant', content: '', createdAt: Date.now() }]);
+    setChatMessages([...baseMessages, { id: assistantId, role: 'assistant', content: '', createdAt: Date.now(), style: chatStyle }]);
     setChatInput('');
     setChatError('');
     setIsChatStreaming(true);
@@ -1999,7 +2009,7 @@ export default function Home() {
           lastRenderedAt = now;
           setChatMessages([
             ...baseMessages,
-            { id: assistantId, role: 'assistant', content: assistantText, createdAt: Date.now() },
+            { id: assistantId, role: 'assistant', content: assistantText, createdAt: Date.now(), style: chatStyle },
           ]);
         }
       }
@@ -2017,7 +2027,7 @@ export default function Home() {
       setAgentMode(finalMode);
       const completed = [
         ...baseMessages,
-        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode, evidence: answerEvidence, combinations: combinationEvidence },
+        { id: assistantId, role: 'assistant' as const, content: displayText, createdAt: Date.now(), tools: toolLabels, mode: finalMode, style: chatStyle, evidence: answerEvidence, combinations: combinationEvidence },
       ];
       setChatMessages(completed);
       saveChat(completed);
@@ -2030,7 +2040,7 @@ export default function Home() {
         const partial = assistantText.trim();
         const answerEvidence = currentAnswerEvidence();
         const stoppedMessages = partial
-          ? [...baseMessages, { id: assistantId, role: 'assistant' as const, content: partial, createdAt: Date.now(), tools: toolLabels, mode: responseMode, evidence: answerEvidence }]
+          ? [...baseMessages, { id: assistantId, role: 'assistant' as const, content: partial, createdAt: Date.now(), tools: toolLabels, mode: responseMode, style: chatStyle, evidence: answerEvidence }]
           : baseMessages;
         setChatMessages(stoppedMessages);
         setChatError('已停止生成。你可以继续追问，或重新生成上一条回答。');
@@ -3270,6 +3280,7 @@ export default function Home() {
                       data-style={key}
                       className={chatStyle === key ? 'active' : ''}
                       onClick={() => chooseChatStyle(key)}
+                      disabled={isChatStreaming}
                       aria-pressed={chatStyle === key}
                     >
                       <i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span>
@@ -3277,6 +3288,7 @@ export default function Home() {
                   ))}
                 </div>
 
+                {renderStyleSwitchNote()}
                 <div className="ai-reply-length" aria-label="选择回答长度"><span>回答长度</span>{(Object.entries(replyLengths) as [ReplyLength, (typeof replyLengths)[ReplyLength]][]).map(([key,item]) => <button key={key} type="button" className={replyLength === key ? 'active' : ''} aria-pressed={replyLength === key} onClick={() => chooseReplyLength(key)}><b>{item.name}</b><small>{item.note}</small></button>)}</div>
 
                 {renderAgentOperationPanels()}
@@ -3284,7 +3296,7 @@ export default function Home() {
                 <div className={`ai-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                   {chatMessages.length ? chatMessages.map((message) => (
                     <article className={`ai-message ${message.role}`} key={message.id}>
-                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}${message.mode === 'local' ? ' · 本地回应' : ''}` : '你'}</span>
+                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${message.style && chatStyles[message.style] ? chatStyles[message.style].name : '历史回答'}${message.mode === 'local' ? ' · 本地回应' : ''}` : '你'}</span>
                       <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
                     </article>
                   )) : (
@@ -3681,16 +3693,17 @@ export default function Home() {
                   </div>
 
                   <div className="ai-style-picker" data-persona={chatStyle} aria-label="选择智能体对话风格">
-                    {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key,item]) => <button key={key} type="button" data-style={key} className={chatStyle === key ? 'active' : ''} onClick={() => chooseChatStyle(key)} aria-pressed={chatStyle === key}><i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span></button>)}
+                    {(Object.entries(chatStyles) as [ChatStyle, (typeof chatStyles)[ChatStyle]][]).map(([key,item]) => <button key={key} type="button" data-style={key} className={chatStyle === key ? 'active' : ''} onClick={() => chooseChatStyle(key)} disabled={isChatStreaming} aria-pressed={chatStyle === key}><i>{item.symbol}</i><span><b>{item.name}</b><small>{item.note}</small></span></button>)}
                   </div>
 
+                  {renderStyleSwitchNote()}
                   <div className="ai-reply-length" aria-label="选择回答长度"><span>回答长度</span>{(Object.entries(replyLengths) as [ReplyLength, (typeof replyLengths)[ReplyLength]][]).map(([key,item]) => <button key={key} type="button" className={replyLength === key ? 'active' : ''} aria-pressed={replyLength === key} onClick={() => chooseReplyLength(key)}><b>{item.name}</b><small>{item.note}</small></button>)}</div>
 
                   {renderAgentOperationPanels()}
 
                   <div className={`ai-chat-window agent-chat-window ${chatMessages.length ? 'has-messages' : ''}`} aria-live="polite">
                     {chatMessages.length ? chatMessages.map((message) => <article className={`ai-message ${message.role}`} key={message.id}>
-                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${chatStyles[chatStyle].name}${message.mode === 'local' ? ' · 本地回应' : ''}` : '你'}</span>
+                      <span className="ai-message-label">{message.role === 'assistant' ? `星契智能体 · ${message.style && chatStyles[message.style] ? chatStyles[message.style].name : '历史回答'}${message.mode === 'local' ? ' · 本地回应' : ''}` : '你'}</span>
                       <p>{message.content || <span className="ai-typing"><i /><i /><i /></span>}</p>
                       {message.role === 'assistant' && Boolean(message.combinations?.length) && <section className="ai-combination-evidence" aria-label="组合牌义依据">
                         <div className="ai-combination-heading"><Sparkles /><span>这段判断用到了 {message.combinations?.length} 组组合依据</span></div>

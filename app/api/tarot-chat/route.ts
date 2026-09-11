@@ -53,10 +53,10 @@ type RequestBody = {
 type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'combinations' | 'actions' | 'memory' | 'journal' | 'compare';
 
 const STYLE_PROMPTS = {
-  gentle: '你是“月眠”，像一个情绪稳定、细腻耐心的闺蜜。用户提问时先温和而明确地回答，再照顾感受；不要用安慰、铺垫或反问代替结论。',
-  analytical: '你是“星衡”，像一个冷静、简洁、重证据的军师。先给明确结论，再按牌位、正逆位和组合依据拆解；区分牌面证据、合理推测和仍需现实确认的部分。',
-  intuitive: '你是“星仔”，像一个会接梗、会轻轻吐槽的损友。先给明确答案，再用自然比喻或一句轻松的吐槽解释依据；笑点不能替代解牌。禁止拿疾病、死亡、创伤、贫困或用户的痛苦开玩笑。',
-  direct: '你是“黑曜”，像一个嘴上不留滤镜、心里有分寸的清醒朋友。第一句直接回答问题，随后指出有依据的矛盾或现实代价；不要预设用户在自我欺骗。可以明确推荐一种行动，最终决定权仍在用户。禁止羞辱、贬低或攻击用户。',
+  gentle: '你是“月眠”，温柔但说实话的闺蜜。先用“我的判断是……”给答案，再像私下聊天一样解释；称呼“你”，使用柔和的完整短句，允许一句具体体谅。不要编号、报告腔、吐槽或命令语气。即使结论不理想也不改口安慰。行动用“先……，我更希望你……”的自然口吻。示例语气：“我的判断是先别联系。我知道你想把话说清楚，但这张牌更支持留一点距离。”示例不是本次结论。',
+  analytical: '你是“星衡”，冷静的分析军师。答案使用“结论／依据／行动”三个清楚的部分，依据用1、2编号，点明具体牌位、正逆位和推论。少用第一人称，不安慰、不比喻、不讲人生道理。建议含一个明确动作和现实验证条件。示例语气：“结论：暂不联系。依据：1. 建议位指向暂停。行动：等到双方愿意讨论具体问题再联系。”示例不是本次结论。',
+  intuitive: '你是“星仔”，有梗、有分寸的损友。第一句照样给答案；解释里至少用一个贴合问题的日常比喻或轻吐槽，再立刻落回具体牌位。口语、有节奏，不能写成严肃报告或温柔鸡汤。行动也用生活化说法。示例语气：“先别联系。别把聊天框当许愿池——建议位要的是暂停。今天先把手从发送键上挪开。”示例不是本次结论。疾病、死亡、创伤、贫困或用户的痛苦不能当笑点。',
+  direct: '你是“黑曜”，直截了当的清醒朋友。第一句短而明确；每段只讲一个重点。点破用户已明确表达的期待与牌面依据之间的落差，直接说明继续某个行为的代价。行动用“现在做……／停止……”的动词句。不要安慰、比喻、铺垫、夸张辱骂，也不要无依据地指责用户自欺。示例语气：“先别联系。没有回应，就别把等待当进展。现在停下追问。”示例不是本次结论。',
 } as const;
 
 const LENGTH_PROMPTS = {
@@ -108,12 +108,35 @@ function cleanMessages(value: unknown, limit = 8, maxLength = 3000): ChatMessage
 
 function isNaturalFollowUp(message: string) {
   if (message.length > 140) return false;
-  const asksForReading = /解牌|解读|分析|重新解释|牌面|牌阵|牌位|正位|逆位|组合|联系|结构|元素|比例|矛盾|冲突|拉扯|盲点|忽略|遗漏|依据|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能|要不要|该不该|是不是|有没有|值不值|能否|是否|何时|什么时候|多久|选哪个|选哪一个|选谁|怎么选|直说|直接.*(说|答|结论)|明确.*(答|结论)|别绕|别.*端水|模棱两可|到底|吗|么[？?]?$|[？?]/.test(message);
-  return !asksForReading;
+  const asksForReading = /解释|解牌|解读|分析|牌面|牌阵|牌位|正位|逆位|组合|联系|结构|元素|比例|矛盾|冲突|拉扯|盲点|忽略|遗漏|依据|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能|要不要|该不该|是不是|有没有|值不值|能否|是否|何时|什么时候|多久|选哪个|选哪一个|选谁|怎么选|直说|直接.*(说|答|结论)|明确.*(答|结论)|别绕|别.*端水|模棱两可|到底|吗|么[？?]?$|[？?]/.test(message);
+  return !asksForReading && /难过|伤心|想哭|崩溃|很累|累了|痛苦|受不了|害怕|担心|焦虑|不安|慌|舍不得|放不下|还爱|想.*(在一起|继续|挽回|坚持)|不想.*(分开|失去)|迷茫|纠结|谢谢|明白了|知道了|^嗯|^好的?[。！!]*$/.test(message);
 }
 
 function isContradictionRequest(message: string) {
   return /矛盾|冲突|拉扯|盲点|忽略|遗漏|没注意|没有注意/.test(message);
+}
+
+function isOutcomeRequest(message: string) {
+  if (/澄清牌|复盘|日记|牌义|矛盾|盲点/.test(message)) return false;
+  return /结果|走向|结局|会不会|能不能|能否|要不要|该不该|选哪个|怎么选|成功吗|通过吗|录取吗|复合吗|喜欢我吗|有戏吗/.test(message);
+}
+
+function renderOutcomeReply(raw: string, style: keyof typeof STYLE_PROMPTS) {
+  try {
+    const value = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
+    if (!value || typeof value !== 'object') return '';
+    const { judgment, basis, advice } = value;
+    if (![judgment, basis, advice].every(part => typeof part === 'string' && part.trim().length > 0)) return '';
+    if (judgment.length > 160 || basis.length > 5000 || advice.length > 1000) return '';
+    if (/很难给.*答案|无法给.*死答案|核心不是|接住不确定|拿走什么|结果只是其中一环|有好有坏|皆有可能/.test(`${judgment}${basis}${advice}`)) return '';
+    const answer = judgment.trim().replace(/^(?:牌面判断|我的判断|结论)[：:]\s*/, '');
+    if (style === 'analytical') return `结论（牌面判断）：${answer}\n\n依据：\n${basis.trim()}\n\n行动：${advice.trim()}`;
+    if (style === 'direct') return `直说，牌面判断：${answer}\n\n${basis.trim()}\n\n现在做：${advice.trim()}`;
+    if (style === 'intuitive') return `这局牌面，我的判断：${answer}\n\n${basis.trim()}\n\n下一步：${advice.trim()}`;
+    return `我的牌面判断是：${answer}\n\n${basis.trim()}\n\n${advice.trim()}`;
+  } catch {
+    return '';
+  }
 }
 
 function compactContextText(context: TarotContext | undefined) {
@@ -360,7 +383,7 @@ function localAgentText(message: string, context: TarotContext | undefined, leng
   const naturalFollowUp = isNaturalFollowUp(message);
   const styledBase = applyLocalPersona(base,style,naturalFollowUp);
   if (naturalFollowUp) return fitCompleteText(styledBase,260);
-  if (/要不要|该不该|会不会|能不能|能否|是否|是不是|有没有|值不值|喜欢.*吗|爱.*吗|选哪个|选哪一个|选谁|怎么选|直说|直接.*(说|答|结论)|明确.*(答|结论)|别绕|别.*端水|模棱两可|到底/.test(message)) {
+  if (isOutcomeRequest(message) || /要不要|该不该|会不会|能不能|能否|是否|是不是|有没有|值不值|喜欢.*吗|爱.*吗|选哪个|选哪一个|选谁|怎么选|直说|直接.*(说|答|结论)|明确.*(答|结论)|别绕|别.*端水|模棱两可|到底/.test(message)) {
     return '当前 AI 服务未连接，无法针对这个追问给出新的判断。已有的本地牌义不能直接证明“会”或“不会”，也不能确认他人的真实想法。请在 AI 服务恢复后重试。';
   }
   if (length === 'brief') return fitCompleteText(styledBase, 220);
@@ -392,6 +415,9 @@ function agentHeaders(tools: AgentToolId[], mode: 'model' | 'local', remaining: 
 }
 
 function localAgentResponse(message: string, context: TarotContext | undefined, tools: AgentToolId[], remaining: number, length: keyof typeof LENGTH_PROMPTS, style: keyof typeof STYLE_PROMPTS) {
+  if (isOutcomeRequest(message)) {
+    return Response.json({ error: 'AI 解读暂时不可用，尚未生成本次判断。请连接 AI 服务后重新生成；不会用本地模板代替结果回答。' }, { status: 503, headers: { 'Cache-Control': 'no-store', 'X-Agent-Mode': 'local' } });
+  }
   return new Response(localAgentText(message, context, length,style), {
     status: 200,
     headers: agentHeaders(tools, 'local', remaining),
@@ -461,6 +487,11 @@ export async function POST(request: Request) {
   const style = body.style && body.style in STYLE_PROMPTS ? body.style : 'gentle';
   const naturalFollowUp = isNaturalFollowUp(message);
   const contradictionRequest = isContradictionRequest(message);
+  const outcomeRequest = isOutcomeRequest(message);
+  // Generated overview templates must not dictate a fresh result judgment.
+  const readingContext = outcomeRequest
+    ? { ...body.context, verdict: undefined, synthesis: undefined, actions: undefined }
+    : body.context;
   const responseConfig = naturalFollowUp
     ? { instruction: '这是自然对话追问。先接住用户此刻的话，用80至220个汉字、两三个自然短段落回应。除非确实有帮助，最多引用一张牌；禁止重述整副牌、原问题、牌阵结构或完整结论。', maxTokens: 520 }
     : lengthConfig;
@@ -482,7 +513,7 @@ export async function POST(request: Request) {
     '你是“星契 Tarot”的塔罗对话伙伴，熟悉韦特体系。请始终使用简体中文。',
     '不要宣称能确定预测未来，不要制造宿命、恐惧或依赖。提供具体、可执行、尊重用户自主权的建议。',
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
-    naturalFollowUp ? compactContextText(body.context) : `${agentEvidence(body.context, tools)}\n\n${contextText(body.context)}`,
+    naturalFollowUp ? compactContextText(readingContext) : `${agentEvidence(readingContext, tools)}\n\n${contextText(readingContext)}`,
     STYLE_PROMPTS[style],
     '四种角色都必须先回答问题；角色只改变语气，不能降低结论清晰度，也不能改变同一组牌的核心事实与证据。',
     '回答规则：第一句给一个清晰、可独立理解的答案，随后给最相关的1至3条依据，最后给一个可执行的下一步。长篇解读也必须先给结论，不能把答案藏在末尾。纯情绪表达不强行套用决策格式。',
@@ -504,6 +535,8 @@ export async function POST(request: Request) {
     naturalFollowUp ? '' : '“组合牌义知识库”提供经典双牌、同花色、重复数字、宫廷牌和起点到结果的结构证据。它用于修正单张牌义；引用时要说清是哪两张牌、落在哪些位置以及正逆位如何改变组合，不要把组合解释成固定预言。',
     naturalFollowUp ? '' : '当用户要求根据日记事实修正旧解读时，事实优先于牌义。必须区分已经验证、没有发生、无法确认和原先过度推断；不得为了证明塔罗准确而重新包装没有发生的内容。',
     responseConfig.instruction,
+    outcomeRequest ? '本次是直接判断问题，必须正面回答用户问的结果或选择。普通求职、面试、考试、感情发展问题可以给有依据的牌面倾向，不能因为未来不确定就改谈成长、接纳或人生课题。遇到冲突先权衡相关牌位，给一个主要判断，不并列两套相反结论。不要把“延迟”当作“会录取”的同义词，也不要把逆位一概当坏结果。仅在牌面资料缺失或相关证据确实无法区分方向时写出具体缺口，并给一项暂定行动。语气遵从当前角色，判断不能随角色改变。' : '',
+    outcomeRequest ? '只返回一个JSON对象，不要代码围栏：{"judgment":"直接针对本次问题的一句主要判断，最多80字","basis":"解释牌名、牌位及正逆位怎样支持判断；按当前角色写出明显不同的语言风格","advice":"一个具体可执行的行动"}。judgment必须是结果倾向或行动选择，不能写“很难给死答案”“先接住不确定”“结果只是其中一环”。例如当依据支持不利趋势时，写“这次面试偏向不顺利，不建议按能拿到offer安排后续”，不要写“核心不是行或不行”。这只是表达示例，不是本次牌面结论，不得无依据照抄。整体已有牌面判断标签，不重复长篇免责声明。' : '',
   ].filter(Boolean).join('\n\n');
 
   const history = cleanMessages(body.history,naturalFollowUp ? 6 : 8,naturalFollowUp ? 1000 : 2200);
@@ -571,7 +604,7 @@ export async function POST(request: Request) {
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: requestPayload(true),
+        body: requestPayload(!outcomeRequest),
         signal: connectController.signal,
       });
       const retryable = [429,500,502,503,504].includes(response.status);
@@ -609,9 +642,14 @@ export async function POST(request: Request) {
   }
 
   const contentType = upstream.headers.get('content-type') || '';
-  if (!upstream.body || contentType.includes('application/json')) {
+  if (!upstream.body || contentType.includes('application/json') || outcomeRequest) {
     const payload = await upstream.json().catch(() => null);
     const completed = extractCompletedText(payload);
+    if (outcomeRequest) {
+      const answer = renderOutcomeReply(completed, style) || renderOutcomeReply(await retryCompletedText(), style);
+      if (!answer) return Response.json({ error: '这次回答没有形成有效的直接判断，请重新生成。' }, { status: 502, headers: { 'Cache-Control': 'no-store' } });
+      return new Response(answer, { headers: agentHeaders(tools, 'model', quota.remaining) });
+    }
     if (!completed) return localAgentResponse(message, body.context, tools, quota.remaining, length,style);
     return new Response(completed, {
       headers: agentHeaders(tools, 'model', quota.remaining),

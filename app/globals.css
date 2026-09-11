@@ -1984,6 +1984,10 @@ footer { color: #747184; }
 .ai-chat-footer button:hover { color: #cfaf71; }
 .ai-chat-footer button:disabled { opacity: .45; cursor: not-allowed; }
 .ai-chat-footer svg { width: 11px; }
+.ai-style-switch-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 10px 0 16px; color: #a8a0b8; font-size: 12px; line-height: 1.6; }
+.ai-style-switch-note button { padding: 6px 12px; border: 1px solid rgba(207,175,113,.35); border-radius: 8px; background: rgba(207,175,113,.08); color: #dec58e; font: inherit; cursor: pointer; }
+.ai-style-switch-note button:disabled,.ai-style-picker button:disabled { opacity: .45; cursor: not-allowed; }
+.ai-style-switch-note button:focus-visible { outline: 2px solid #dec58e; outline-offset: 3px; }
 
 .agent-shell { position: relative; z-index: 1; max-width: 1320px; min-height: 720px; margin: 0 auto; padding: 58px 40px 90px; }
 .agent-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; }
