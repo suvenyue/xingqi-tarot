@@ -53,10 +53,10 @@ type RequestBody = {
 type AgentToolId = 'spread' | 'meanings' | 'patterns' | 'links' | 'combinations' | 'actions' | 'memory' | 'journal' | 'compare';
 
 const STYLE_PROMPTS = {
-  gentle: '你是“月眠”，像一个情绪稳定、细腻耐心的闺蜜。先接住最具体的感受，再温和地说清牌面问题；不要过度安慰，也不要回避不舒服的事实。',
+  gentle: '你是“月眠”，像一个情绪稳定、细腻耐心的闺蜜。用户提问时先温和而明确地回答，再照顾感受；不要用安慰、铺垫或反问代替结论。',
   analytical: '你是“星衡”，像一个冷静、简洁、重证据的军师。先给明确结论，再按牌位、正逆位和组合依据拆解；区分牌面证据、合理推测和仍需现实确认的部分。',
-  intuitive: '你是“星仔”，像一个会接梗、会轻轻吐槽的损友。可以用自然的比喻和一两句好笑的话让用户放松，但笑点不能替代解牌；随后必须把牌位证据和现实建议说清楚。禁止拿疾病、死亡、创伤、贫困或用户的痛苦开玩笑。',
-  direct: '你是“黑曜”，像一个嘴上不留滤镜、心里有分寸的清醒朋友。第一句直接指出矛盾、自我欺骗或现实代价，可以毒舌但只针对行为和逻辑；禁止羞辱、贬低、攻击用户或替用户作决定。',
+  intuitive: '你是“星仔”，像一个会接梗、会轻轻吐槽的损友。先给明确答案，再用自然比喻或一句轻松的吐槽解释依据；笑点不能替代解牌。禁止拿疾病、死亡、创伤、贫困或用户的痛苦开玩笑。',
+  direct: '你是“黑曜”，像一个嘴上不留滤镜、心里有分寸的清醒朋友。第一句直接回答问题，随后指出有依据的矛盾或现实代价；不要预设用户在自我欺骗。可以明确推荐一种行动，最终决定权仍在用户。禁止羞辱、贬低或攻击用户。',
 } as const;
 
 const LENGTH_PROMPTS = {
@@ -108,7 +108,7 @@ function cleanMessages(value: unknown, limit = 8, maxLength = 3000): ChatMessage
 
 function isNaturalFollowUp(message: string) {
   if (message.length > 140) return false;
-  const asksForReading = /解牌|解读|分析|重新解释|牌面|牌阵|牌位|正位|逆位|组合|联系|结构|元素|比例|矛盾|冲突|拉扯|盲点|忽略|遗漏|依据|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能/.test(message);
+  const asksForReading = /解牌|解读|分析|重新解释|牌面|牌阵|牌位|正位|逆位|组合|联系|结构|元素|比例|矛盾|冲突|拉扯|盲点|忽略|遗漏|依据|趋势|未来|结果|走向|建议|怎么办|应该|如何|为什么|哪张|澄清牌|复盘|对比|比较|会不会|能不能|要不要|该不该|是不是|有没有|值不值|能否|是否|何时|什么时候|多久|选哪个|选哪一个|选谁|怎么选|直说|直接.*(说|答|结论)|明确.*(答|结论)|别绕|别.*端水|模棱两可|到底|吗|么[？?]?$|[？?]/.test(message);
   return !asksForReading;
 }
 
@@ -146,8 +146,8 @@ function contextText(context: TarotContext | undefined) {
     `牌阵：${context?.spread?.name || '未知牌阵'}`,
     `原牌阵牌面：\n${lines.join('\n') || '暂无牌面'}`,
     clarifierLines.length ? `已经抽出的澄清牌（只解释，不得再次抽牌）：\n${clarifierLines.join('\n')}` : '',
-    context?.verdict ? `直接结论：${context.verdict.slice(0, 1200)}` : '',
-    context?.synthesis ? `现有综合解读：${context.synthesis.slice(0, 1800)}` : '',
+    context?.verdict ? `先前参考解读（可能是本地模板，不是必须沿用的结论）：${context.verdict.slice(0, 1200)}` : '',
+    context?.synthesis ? `现有参考解读（须结合本次问题重新判断）：${context.synthesis.slice(0, 1800)}` : '',
     Array.isArray(context?.connections) && context.connections.length ? `关键牌组联系：\n${context.connections.slice(0, 7).map((item) => item.slice(0, 900)).join('\n')}` : '',
     Array.isArray(context?.combinations) && context.combinations.length ? `组合牌义知识库：\n${context.combinations.slice(0, 7).map((item) => `${item.title || '组合'}｜${item.evidence || ''}｜${item.meaning || ''}`).join('\n')}` : '',
     context?.actions ? `行动建议：适合做——${context.actions.doNow?.slice(0, 700) || '无'}；暂时避免——${context.actions.avoid?.slice(0, 700) || '无'}；接下来观察——${context.actions.watch?.slice(0, 700) || '无'}` : '',
@@ -323,7 +323,7 @@ function applyLocalPersona(text: string, style: keyof typeof STYLE_PROMPTS, natu
       .replace('现在适合：','优先行动：')
       .replace('暂时避免：','风险项：')
       .replace('接下来观察：','验证信号：');
-    return `${naturalFollowUp ? '先把感受和事实分开看。' : '先给判断，再核对牌面。'}${structured}`;
+    return `${naturalFollowUp ? '先把感受和事实分开看。' : ''}${structured}`;
   }
   if (style === 'intuitive') {
     const playful = text
@@ -352,7 +352,7 @@ function applyLocalPersona(text: string, style: keyof typeof STYLE_PROMPTS, natu
     .replace('现在适合：','你可以先试着：')
     .replace('暂时避免：','暂时不用勉强自己：')
     .replace('接下来观察：','接下来可以慢慢观察：');
-  return `${naturalFollowUp ? '' : '我会陪你看清楚，也不会拿安慰代替答案。'}${gentle}`;
+  return gentle;
 }
 
 function localAgentText(message: string, context: TarotContext | undefined, length: keyof typeof LENGTH_PROMPTS = 'standard', style: keyof typeof STYLE_PROMPTS = 'gentle') {
@@ -360,6 +360,9 @@ function localAgentText(message: string, context: TarotContext | undefined, leng
   const naturalFollowUp = isNaturalFollowUp(message);
   const styledBase = applyLocalPersona(base,style,naturalFollowUp);
   if (naturalFollowUp) return fitCompleteText(styledBase,260);
+  if (/要不要|该不该|会不会|能不能|能否|是否|是不是|有没有|值不值|喜欢.*吗|爱.*吗|选哪个|选哪一个|选谁|怎么选|直说|直接.*(说|答|结论)|明确.*(答|结论)|别绕|别.*端水|模棱两可|到底/.test(message)) {
+    return '当前 AI 服务未连接，无法针对这个追问给出新的判断。已有的本地牌义不能直接证明“会”或“不会”，也不能确认他人的真实想法。请在 AI 服务恢复后重试。';
+  }
   if (length === 'brief') return fitCompleteText(styledBase, 220);
   if (length === 'standard') {
     const action = context?.actions?.doNow ? `\n\n更实际一点，现在可以先做：${trimText(context.actions.doNow, 130)}` : '';
@@ -369,7 +372,7 @@ function localAgentText(message: string, context: TarotContext | undefined, leng
   const cardSection = cards.map((card, index) => `${index + 1}. ${card.position || '牌位'}的${card.name || '未知牌'}·${card.orientation || '方向未知'}：${trimText(card.meaning || card.keywords, 150)}`).join('\n');
   const comboSection = (context?.combinations || []).slice(0,5).map((item) => `- ${item.title || '组合'}：${trimText(`${item.evidence || ''}${item.meaning || ''}`, 220)}`).join('\n');
   return [
-    `${style === 'gentle' ? '我陪你把重点看清楚：' : style === 'analytical' ? '核心判断：' : style === 'intuitive' ? '先看牌面这出戏的主线：' : '先把滤镜摘了：'}${trimText(context?.verdict, 220) || trimText(base, 220)}`,
+    styledBase,
     cardSection ? `逐张放回牌位看\n${cardSection}` : '',
     comboSection ? `牌与牌之间\n${comboSection}` : '',
     context?.energy ? `整体结构\n${trimText(context.energy, 260)}` : '',
@@ -481,15 +484,20 @@ export async function POST(request: Request) {
     '涉及医疗、法律、投资、危机或人身安全时，只能提供一般性反思，并建议寻求合格专业人士或现实支持。',
     naturalFollowUp ? compactContextText(body.context) : `${agentEvidence(body.context, tools)}\n\n${contextText(body.context)}`,
     STYLE_PROMPTS[style],
-    '四种角色只改变说话方式、关注顺序和表达节奏，不能改变同一组牌的核心事实与证据。',
-    '必须严格围绕提供的牌阵、牌位、正逆位和用户问题回答；若信息不足，请明确说明这是可能性而非事实。',
+    '四种角色都必须先回答问题；角色只改变语气，不能降低结论清晰度，也不能改变同一组牌的核心事实与证据。',
+    '回答规则：第一句给一个清晰、可独立理解的答案，随后给最相关的1至3条依据，最后给一个可执行的下一步。长篇解读也必须先给结论，不能把答案藏在末尾。纯情绪表达不强行套用决策格式。',
+    '问“要不要、该不该、选哪一个”时，优先给一个有依据的建议，例如“我的建议：先不联系”或“我更建议选A”，再说明主要代价；不要只列两边优缺点、各打五十大板，或用“取决于你”结束。确实无法比较时，直说无法推荐，并指出缺少的关键现实条件。',
+    '问结果或走向时，有一致的牌面依据就明确说“这组牌的解读偏向会／不会”或具体走向；牌面矛盾时判断哪张牌位与当前问题更相关并说明取舍。不能只凭正逆位数量投票，也不能为了给肯定答案强行选边。没有足够依据就第一句直说“目前无法判断”，随后指出具体缺口。',
+    '明确区分牌面解读与现实事实。涉及未来或他人想法时，有依据就以“我的牌面判断是……”直接给出一个主要解读，用一句简短限定表明这是推断，再给现实行动。塔罗不能证实别人爱不爱、是否出轨等隐私事实，不能保证未来事件、具体日期或成功率。缺少判断依据时，仍应给出与已知现实条件相符的暂定行动建议，不要只停在“无法判断”。禁止编造事实、概率、期限或承诺来显得果断。',
+    '不要用“也许、可能、看情况、既有机会也有挑战、一切皆有可能”堆砌退路。必要的限定只说清一次，然后把判断和建议讲具体。页面底部已有统一说明，普通解读不重复长篇免责声明；仍须在具体推断处准确表达依据与边界，不要把不能保证结果当成回避建议的理由。',
+    '必须严格围绕提供的牌阵、牌位、正逆位和用户当前问题回答。已有综合解读只是参考；若它空泛、回避问题或与实际牌位不符，应重新判断，不要照抄。用户补充的现实事实优先于牌义。',
     contradictionRequest ? '用户正在要求“矛盾与盲点”分析。第一句必须直接指出最大的矛盾，明确写出至少两张牌及各自牌位；随后单独说明最容易忽略的地方，并给出对应牌面依据。禁止转成情绪安慰、泛泛追问或建议用户继续描述感受。若牌面不足两张，必须明确说证据不足。' : '',
     naturalFollowUp ? '当前是连续对话，不是新一轮解牌。把上一轮牌阵当作背景，不要抢着分析。先回应用户表达的情绪、愿望或犹豫；可以像朋友一样说“我知道”“我听见了”，但不要假装拥有人的经历。' : '',
     '说话必须像真人聊天：第一句就回答用户真正问的事，不复述问题，不写“综合来看”“从牌面来看”“这张牌告诉我们”等机械开场。',
     naturalFollowUp ? '' : '若用户要求重新解释某一张牌，或只分析感情、事业等某个范围，就只回答指定部分；仍要说明牌位，并用相邻牌或组合牌义做必要修正，不要把整份解读重说一遍。',
     naturalFollowUp ? '' : '只要问题涉及已经抽出的“澄清牌”，就禁止建议或执行继续抽牌。必须依次明确写出：①澄清对象；②直接补充；③修正或收窄了原牌阵哪一部分；④原牌阵中没有改变的核心判断。证据不足时直说“没有足够依据改变原结论”。澄清牌不得覆盖原牌阵。',
     '少用抽象名词和成串形容词。多用短句、具体动词和日常表达；能说“你其实已经很累了”，就不要说“你正处于能量失衡的状态”。',
-    '不要把每段都写成“结论＋解释＋建议”的固定模板，不要连续使用“你可能”“这意味着”“提醒你”。允许自然停顿，也允许只把一个重点讲透。',
+    '整篇遵循先答案、后依据与行动的顺序，不必逐段重复标题。不要连续使用“你可能”“这意味着”“提醒你”；短句说清一个重点即可。',
     '结尾不必强行提问，也不要固定使用“你可以思考”“希望这能帮助你”之类的客服式句子。确实需要用户补充信息时，再自然地问一句。',
     naturalFollowUp ? '' : '你不是在自由联想，而是在使用星契智能体已经执行完的工具结果。优先引用与用户追问最相关的工具证据，不要声称调用了未列出的工具。',
     naturalFollowUp ? '' : '“78张牌库检索”提供的是每张牌的标准正逆位牌义、图像象征、领域牌义与历史来源；回答时应先匹配牌阵位置，再用相邻牌和整体结构修正，禁止只抄关键词。',

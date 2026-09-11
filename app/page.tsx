@@ -3244,7 +3244,7 @@ export default function Home() {
                   <div>
                     <span>XINGQI TAROT AGENT · V2</span>
                     <h3 id="ai-chat-title">星契塔罗智能体</h3>
-                    <p>先调用牌阵、牌义与组合工具，再组织回答；模型不可用时自动切回本地解读。</p>
+                    <p>先给明确判断，再讲牌面依据，最后告诉你下一步怎么做。</p>
                   </div>
                   <div className="ai-chat-quota"><b>{chatRemaining}</b><span>今日剩余</span></div>
                 </div>
@@ -3290,7 +3290,7 @@ export default function Home() {
                   )) : (
                     <div className="ai-chat-welcome">
                       <span>✦</span>
-                      <p>你可以问得很具体。智能体会先读取牌阵、检索牌义并分析整组关系，再给你回应。</p>
+                      <p>直接问你最想知道的事。我会先给判断，再解释依据和行动建议。</p>
                     </div>
                   )}
                   <div ref={chatEndRef} />
@@ -3737,8 +3737,8 @@ export default function Home() {
       <footer className="site-footer">
         <span className="footer-seal" aria-hidden="true"><i>☾</i><b>✦</b></span>
         <span className="footer-brand">星契 TAROT</span>
-        <p>没有标准答案，只有值得被你听见的提醒。</p>
-        <small>把牌当作一面镜子，把选择留在自己手中。</small>
+        <p>看清问题，再决定下一步。</p>
+        <small>塔罗与 AI 解读属于牌面推断，可能有误，不保证预测准确，也不能证实他人的真实想法。<br />内容供娱乐与自我反思，不替代现实证据及医疗、法律、投资等专业意见。</small>
       </footer>
     </main>
   );

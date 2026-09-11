@@ -49,19 +49,7 @@ function inferSpread(concern: string): Spread {
 function fallbackPlan(concern: string): TarotPlan {
   const spread = inferSpread(concern);
   const topic = concern.replace(/[。！？!?]+$/g, '').trim();
-  const refinedQuestion = spread === 'relationship'
-    ? `围绕“${topic}”，这段关系目前的真实状态、主要阻碍和下一步适合采取的行动是什么？`
-    : spread === 'career'
-      ? `围绕“${topic}”，我当前最需要看清的职业课题、可用机会和下一步行动是什么？`
-      : spread === 'choice'
-        ? `面对“${topic}”，两条路径各自的机会、代价和发展趋势是什么？`
-        : spread === 'year'
-          ? `围绕“${topic}”，未来一年最重要的主题，以及各生活领域需要留意的变化是什么？`
-          : spread === 'single'
-            ? `关于“${topic}”，我此刻最需要看见的核心提醒是什么？`
-            : spread === 'celtic'
-              ? `围绕“${topic}”，问题的根源、现实阻碍、可用资源和当前路径的发展趋势是什么？`
-              : `围绕“${topic}”，过去形成了什么影响、当下的关键是什么、接下来会怎样发展？`;
+  const refinedQuestion = concern;
 
   const followUps: Record<Spread, string[]> = {
     single: ['这件事里，你最想改变的是结果，还是自己的状态？', '现在最让你难受的具体时刻是什么？'],
@@ -137,7 +125,7 @@ export async function POST(request: Request) {
         messages: [
           {
             role: 'system',
-            content: `你是星契塔罗的占卜规划助手。把用户的困扰整理成开放、具体、不过度预测的问题，并从以下牌阵中选择一个：single 单牌指引；three 三牌展开；celtic 凯尔特十字；relationship 感情关系；choice 二选一决策；career 事业发展；year 年度十二宫。只返回JSON：{"refinedQuestion":"","spread":"","reason":"","followUps":["",""] ,"memorySuggestion":""}。followUps必须是抽牌后值得追问用户的两个现实问题。memorySuggestion只概括长期背景，不写敏感细节，不得声称已保存。`,
+            content: `你是星契塔罗的占卜规划助手。把用户的困扰整理得简洁、具体，保留用户真正想要回答的问题、选项和时间范围。用户问“要不要”“选哪一个”“会不会”时必须保留这个判断目标，不要改成泛泛的“需要看见什么课题”或只列机会与挑战；整理问题不代表能预测或保证结果。问题已清楚时保留原句。从以下牌阵中选择一个：single 单牌指引；three 三牌展开；celtic 凯尔特十字；relationship 感情关系；choice 二选一决策；career 事业发展；year 年度十二宫。只返回JSON：{"refinedQuestion":"","spread":"","reason":"","followUps":["",""] ,"memorySuggestion":""}。followUps必须是抽牌后值得追问用户的两个现实问题。memorySuggestion只概括长期背景，不写敏感细节，不得声称已保存。`,
           },
           { role: 'user', content: concern },
         ],
